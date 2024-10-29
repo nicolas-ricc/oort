@@ -1,0 +1,13 @@
+{
+  "name": "@oort/frontend",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@oort/ui-components": "*"
+  }
+}
