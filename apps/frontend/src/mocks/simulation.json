@@ -1,0 +1,21 @@
+{
+    "nodes": [
+      { "id": 1, "x": 1, "y": 2, "z": 3 },
+      { "id": 2, "x": 2, "y": 4, "z": 5 },
+      { "id": 3, "x": -3, "y": -1, "z": 2 },
+      { "id": 4, "x": -2, "y": 3, "z": -4 },
+      { "id": 5, "x": 4, "y": -3, "z": 1 },
+      { "id": 6, "x": 0, "y": 0, "z": 0 },
+      { "id": 7, "x": 3, "y": 1, "z": 4 }
+    ],
+    "links": [
+      { "source": 1, "target": 2 },
+      { "source": 1, "target": 3 },
+      { "source": 2, "target": 4 },
+      { "source": 3, "target": 5 },
+      { "source": 5, "target": 6 },
+      { "source": 6, "target": 7 },
+      { "source": 4, "target": 7 }
+    ]
+  }
+  

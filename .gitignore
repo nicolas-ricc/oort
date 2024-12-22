@@ -9,7 +9,9 @@ coverage
 # Production
 build
 dist
-
+lib
+*/lib*
+*/bin*
 # Misc
 .DS_Store
 .env.local
