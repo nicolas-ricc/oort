@@ -1,7 +1,7 @@
 import requests
 import json
 
-def test_endpoint(text, url="http://localhost:8000/api/process_text"):
+def test_endpoint(text, url="http://localhost:8000/api/vectorize"):
     """
     Test the text processing endpoint
     

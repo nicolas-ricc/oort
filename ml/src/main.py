@@ -25,7 +25,7 @@ class NumpyEncoder(json.JSONEncoder):
             return float(obj)
         return super(NumpyEncoder, self).default(obj)
 
-@app.post("/api/process_text")
+@app.post("/api/vectorize")
 async def process_text(input_data: TextInput):
     try:
         concepts = conceptsModel.generate_concepts(input_data.text)
