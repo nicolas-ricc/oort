@@ -2,7 +2,7 @@ version: '3'
 
 services:
   # Backend FastAPI service
-  backend:
+  oort-ml:
     build:
       context: ./ml
       dockerfile: Dockerfile
@@ -16,7 +16,7 @@ services:
       - ollama
 
   # Frontend React service
-  frontend:
+  oort-fe-app:
     build:
       context: ./apps/frontend
       dockerfile: Dockerfile
@@ -28,7 +28,7 @@ services:
     environment:
       - NODE_ENV=development
     depends_on:
-      - backend
+      - oort-ml
 
   # Ollama service for embeddings and LLM
   ollama:
