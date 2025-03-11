@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-
-
 @layer base {
   :root {
     --background: 20 14.3% 4.1%;
@@ -32,45 +30,101 @@
 
 }
 
+@theme {
+  /* Border radius values */
+  --radius: 0.5rem;
+
+  /* Colors using HSL values */
+  --background-dark: 0 0% 7%;
+  --foreground: 0 0% 100%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 4%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 4%;
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 98%;
+  --secondary: 0 0% 96%;
+  --secondary-foreground: 0 0% 9%;
+  --muted: 0 0% 96%;
+  --muted-foreground: 0 0% 45%;
+  --accent: 0 0% 96%;
+  --accent-foreground: 0 0% 9%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 90%;
+  --input: 0 0% 90%;
+  --ring: 0 0% 76%;
+  
+  /* Chart colors */
+  --chart-1: 215 100% 60%;
+  --chart-2: 125 100% 60%;
+  --chart-3: 45 100% 60%;
+  --chart-4: 290 100% 60%;
+  --chart-5: 175 100% 60%;
+
+  /* Terminal colors using hex values */
+  --color-terminal-bg: #18181b;
+  --color-terminal-border: #15803d;
+  --color-terminal-text: #4ade80;
+  --color-terminal-muted: #15803d;
+  --color-terminal-highlight: #065f46;
+  --color-terminal-active: #065f46;
+
+  /* Fonts */
+  --font-bitmap: "bitmap";
+  --font-quantico: "Quantico", "sans-serif";
+}
+
 @font-face {
   font-family: 'bitmap';
   src: url('Web437_Trident_9x16.woff') format('opentype');
 
 }
 
-
-.quantico-regular {
-  font-family: "Quantico", serif;
-  font-weight: 400;
-  font-style: normal;
+@keyframes accordion-down {
+  from { height: 0; }
+  to { height: var(--radix-accordion-content-height); }
 }
 
-.quantico-bold {
-  font-family: "Quantico", serif;
-  font-weight: 700;
-  font-style: normal;
+@keyframes accordion-up {
+  from { height: var(--radix-accordion-content-height); }
+  to { height: 0; }
 }
 
-.quantico-regular-italic {
-  font-family: "Quantico", serif;
-  font-weight: 400;
-  font-style: italic;
+@keyframes terminal-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
-.quantico-bold-italic {
-  font-family: "Quantico", serif;
-  font-weight: 700;
-  font-style: italic;
-}
+@animation accordion-down 0.2s ease-out;
+@animation accordion-up 0.2s ease-out;
+@animation terminal-blink 1.5s infinite;
 
+@utilities {
+  .font-bitmap {
+    font-family: var(--font-bitmap);
+  }
+  
+  .bg-dark {
+    background-color: #11111100;
+  }
+  
+  .bg-terminal {
+    background-color: var(--color-terminal-bg);
+  }
+  
+  .text-terminal {
+    color: var(--color-terminal-text);
+  }
+  
+  .border-terminal {
+    border-color: var(--color-terminal-border);
+  }
+}
 
 
 @layer base {
-  * {
-    @apply border-border;
-  }
-
   body {
-    @apply font-bitmap antialiased bg-background text-foreground;
+    @apply font-bitmap antialiased;
   }
 }

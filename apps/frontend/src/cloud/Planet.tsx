@@ -55,15 +55,15 @@ export function Planet({ texturePath, position, onClick, concepts, isSelected })
 
             <Html
                 position={[0, 1.5, 0]}
-                center
+                
                 onClick={onClick}
-                className={`text-[32px] select-none transition-colors ease-in-out overflow-x-clip inline-block`}>
+                className="text-2xl select-none transition-colors ease-in-out overflow-x-clip">
                 <div>
-                    <div className={`bg-black/80 border border-green-700 p-4 uppercase ${isSelected ? "opacity-1" : "opacity-30"}`}>
+                    <div className={`bg-black bg-opacity-80 border border-green-700 p-4 ${isSelected ? "opacity-100" : "opacity-30"}`}>
                         {concepts.map((concept) => (
                             <ul className="space-y-2 flex justify-center items-center" key={concept}>
                                 <li className={`list-none ${isSelected ? 'text-white' : 'text-green-400 bg-transparent'} leading-relaxed`} onClick={onClick}>
-                                    <span >{concept}</span>
+                                    {concept}
                                 </li>
                             </ul>
                         ))}
