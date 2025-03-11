@@ -29,7 +29,6 @@ export function Planet({ texturePath, position, onClick, concepts, isSelected })
 
     return (
         <group position={position}>
-            {/* Aura effect */}
             {isSelected && (
                 <mesh ref={auraRef} position={[0, 0, 0]}>
                     <sphereGeometry args={[1.2 * scale[0], 32, 32]} />
@@ -41,7 +40,6 @@ export function Planet({ texturePath, position, onClick, concepts, isSelected })
                 </mesh>
             )}
 
-            {/* Planet mesh */}
             <mesh
                 ref={meshRef}
                 onClick={onClick}
@@ -55,33 +53,21 @@ export function Planet({ texturePath, position, onClick, concepts, isSelected })
             </mesh>
 
 
-            {/* Keep HTML position relative to the planet */}
             <Html
-                position={[0, 1.5, 0]} // Adjust the position as needed
+                position={[0, 1.5, 0]}
                 center
                 onClick={onClick}
-                className={`text-[10px] select-none transition-colors ease-in-out overflow-x-clip w-[200px]`}
-
-            >
-                <div className="relative"
-                >
-                    {/* Background container with border */}
-                    <div className={`bg-black/80 border border-cyan-500/30 p-4 text-cyan-400 uppercase  ${isSelected ? 'text-white' : 'text-lightblue bg-transparent text-transparent' }`}>
-                        {/* Description */}
+                className={`text-[32px] select-none transition-colors ease-in-out overflow-x-clip inline-block`}>
+                <div>
+                    <div className={`bg-black/80 border border-green-700 p-4 uppercase ${isSelected ? "opacity-1" : "opacity-30"}`}>
                         {concepts.map((concept) => (
-                            <div className="space-y-2 font-mono text-sm" key={concept}>
-                                <li className="mt-3 text-xs text-cyan-400 leading-relaxed" onClick={onClick}>
+                            <ul className="space-y-2 flex justify-center items-center" key={concept}>
+                                <li className={`list-none ${isSelected ? 'text-white' : 'text-green-400 bg-transparent'} leading-relaxed`} onClick={onClick}>
                                     <span >{concept}</span>
                                 </li>
-                            </div>
+                            </ul>
                         ))}
                     </div>
-
-                    {/* Decorative angles */}
-                    <div className="absolute -top-2 -left-2 w-3 h-3 border-l-4 border-t border-cyan-500"></div>
-                    <div className="absolute -top-2 -right-2 w-3 h-3 border-r-4 border-t border-cyan-500"></div>
-                    <div className="absolute -bottom-2 -left-2 w-3 h-3 border-l border-b border-cyan-500"></div>
-                    <div className="absolute -bottom-2 -right-2 w-3 h-3 border-r border-b border-cyan-500"></div>
                 </div>
             </Html>
             {/* Enhanced sparkles for selected state */}

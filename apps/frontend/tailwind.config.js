@@ -5,9 +5,9 @@ export default {
 		"./index.html",
 		"./src/**/*.{js,ts,jsx,tsx}",
 	],
-	  plugins: [
+	plugins: [
 		require("@tailwindcss/typography"),
-	  ],
+	],
 	theme: {
 		extend: {
 			colors: {
@@ -51,7 +51,15 @@ export default {
 					'3': 'hsl(var(--chart-3))',
 					'4': 'hsl(var(--chart-4))',
 					'5': 'hsl(var(--chart-5))'
-				}
+				},
+				terminal: {
+					bg: "#18181b", // zinc-900
+					border: "#15803d", // green-700
+					text: "#4ade80", // green-400
+					muted: "#15803d", // green-700
+					highlight: "#065f46", // green-800
+					active: "#065f46", // green-800
+				  },
 			},
 			borderRadius: {
 				lg: 'var(--radius)',
@@ -59,7 +67,26 @@ export default {
 				sm: 'calc(var(--radius) - 4px)'
 			},
 			fontFamily: {
-				"quantico-regular": ["Quantico", "sans-serif"],
+				"bitmap": "bitmap", "quantico-regular": ["Quantico", "sans-serif"],
+			},
+			keyframes: {
+				"accordion-down": {
+					from: { height: "0" },
+					to: { height: "var(--radix-accordion-content-height)" },
+				},
+				"accordion-up": {
+					from: { height: "var(--radix-accordion-content-height)" },
+					to: { height: "0" },
+				},
+				"terminal-blink": {
+					"0%, 100%": { opacity: "1" },
+					"50%": { opacity: "0.4" },
+				},
+			},
+			animation: {
+				"accordion-down": "accordion-down 0.2s ease-out",
+				"accordion-up": "accordion-up 0.2s ease-out",
+				"terminal-blink": "terminal-blink 1.5s infinite",
 			},
 		}
 	},

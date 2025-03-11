@@ -1,6 +1,5 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
 
 
 @layer base {
@@ -33,6 +32,13 @@
 
 }
 
+@font-face {
+  font-family: 'bitmap';
+  src: url('Web437_Trident_9x16.woff') format('opentype');
+
+}
+
+
 .quantico-regular {
   font-family: "Quantico", serif;
   font-weight: 400;
@@ -63,7 +69,8 @@
   * {
     @apply border-border;
   }
+
   body {
-    @apply font-quantico-regular antialiased bg-background text-foreground;
+    @apply font-bitmap antialiased bg-background text-foreground;
   }
 }
