@@ -1,5 +1,6 @@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { cn } from "@/lib/utils"
+import { Upload } from "lucide-react"
 
 
 export const Menu = ({ concepts, onSelect }) => {
@@ -14,6 +15,17 @@ export const Menu = ({ concepts, onSelect }) => {
                     <div className="border-y border-terminal-border px-3 py-1 bg-terminal-bg">
                         <CommandInput className="border-none outline-none text-terminal-text bg-transparent placeholder-terminal-muted caret-terminal-text text-[16px]"
                             placeholder="What are you looking for..." />
+                        <label htmlFor="file-upload" className={`cursor-pointer flex items-center justify-center w-10 h-10 rounded-md transition-colors ${isUploading ? 'text-gray-500' : 'text-terminal-text hover:text-green-300 hover:bg-zinc-800'}`}>
+                            <Upload size={20} />
+                            <input
+                                id="file-upload"
+                                type="file"
+                                accept=".txt,.md,.text"
+                                className="hidden"
+/*                                 onChange={handleFileUpload}
+                                disabled={isUploading} */
+                            />
+                        </label>
                     </div>
 
                     <CommandList className="max-h-80 overflow-y-auto scrollbar scrollbar-w-3 scrollbar-thumb-terminal-border scrollbar-track-zinc-800">
