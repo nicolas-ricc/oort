@@ -15,7 +15,7 @@ export const Menu = ({ concepts, onSelect }) => {
                     <div className="border-y border-terminal-border px-3 py-1 bg-terminal-bg">
                         <CommandInput className="border-none outline-none text-terminal-text bg-transparent placeholder-terminal-muted caret-terminal-text text-[16px]"
                             placeholder="What are you looking for..." />
-                        <label htmlFor="file-upload" className={`cursor-pointer flex items-center justify-center w-10 h-10 rounded-md transition-colors ${isUploading ? 'text-gray-500' : 'text-terminal-text hover:text-green-300 hover:bg-zinc-800'}`}>
+                        <label htmlFor="file-upload" className={`cursor-pointer flex items-center justify-center w-10 h-10 rounded-md transition-colors ${false ? 'text-gray-500' : 'text-terminal-text hover:text-green-300 hover:bg-zinc-800'}`}>
                             <Upload size={20} />
                             <input
                                 id="file-upload"
