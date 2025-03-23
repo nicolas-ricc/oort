@@ -3,13 +3,13 @@ import simulation from "./mocks/simulation.json"
 import { useCallback, useState } from 'react'
 import { Menu } from './layout/Menu'
 import { Layout } from './layout/Layout'
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 function App() {
   const [simulationData, setSimulationData] = useState(simulation)
   const [active, setActive] = useState(0)
 
-  const concepts = simulationData.map(({ concepts }) => concepts).flat()
+  const concepts =  []   /*  simulationData.map(({ concepts }) => concepts).flat() */
 
   
   const handleSimulationUpdate = useCallback((newData) => {

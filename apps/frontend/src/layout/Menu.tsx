@@ -1,7 +1,7 @@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { cn } from "@/lib/utils"
 import { Upload } from "lucide-react"
-import { useState } from "react"
+import { ChangeEvent, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 
 
@@ -9,18 +9,25 @@ export const Menu = ({ concepts, onSelect, activeIndex, setActiveIndex, onSimula
 
     const [isUploading, setIsUploading] = useState(false)
     const { mutate: uploadFile } = useMutation({
-        mutationFn: (file) => {
-            console.log("file", file)
-            const text = file.text();
-            return fetch('http://localhost:8000/api/vectorize', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    "Accept-Cross-Origin": "*"
-                },
-                body: JSON.stringify({ text }),
-            })
-        }, 
+        mutationFn: (event: ChangeEvent) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const text = e.target.result;
+                return fetch('http://localhost:8000/api/vectorize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        "Accept-Cross-Origin": "*",
+                        "Access-Control-Allow-Origin": "*",
+                    },
+                    body: JSON.stringify({ text }),
+                })
+            }
+            reader.readAsText(file);
+        },
         onMutate: () => {
             setIsUploading(true)
         },

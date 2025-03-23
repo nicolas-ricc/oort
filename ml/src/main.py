@@ -1,7 +1,7 @@
 import json
-from dimensionality import clusterConcepts
-from concepts.model import ConceptsModel
-from embeddings.model import EmbeddingModel
+import src.dimensionality as dimensionality 
+from src.concepts.model import ConceptsModel
+from src.embeddings.model import EmbeddingModel
 import numpy as np
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,7 +49,7 @@ async def process_text(input_data: TextInput):
             raise HTTPException(status_code=500, detail="Error generating embeddings")
         
         # Cluster concepts with embeddings
-        clustered_results = clusterConcepts(concepts, embeddings)
+        clustered_results = dimensionality.clusterConcepts(concepts, embeddings)
         
         return {
             "success": True,
@@ -79,7 +79,7 @@ async def upload_file(file: UploadFile = File(...)):
             raise HTTPException(status_code=500, detail="Error generating embeddings")
         
         # Cluster concepts with embeddings
-        clustered_results = clusterConcepts(concepts, embeddings)
+        clustered_results = dimensionality.clusterConcepts(concepts, embeddings)
         
         return {
             "success": True,
