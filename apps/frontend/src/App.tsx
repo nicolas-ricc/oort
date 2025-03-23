@@ -9,7 +9,7 @@ function App() {
   const [simulationData, setSimulationData] = useState(simulation)
   const [active, setActive] = useState(0)
 
-  const concepts =  []   /*  simulationData.map(({ concepts }) => concepts).flat() */
+  const concepts = simulationData?.map(({ concepts }) => concepts).flat() || []
 
   
   const handleSimulationUpdate = useCallback((newData) => {
