@@ -8,8 +8,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # Initialize models
-conceptsModel = ConceptsModel()
-embeddingsModel = EmbeddingModel()
+conceptsModel = ConceptsModel(base_url="http://ollama:11434")
+embeddingsModel = EmbeddingModel(base_url="http://ollama:11434")
 
 app = FastAPI()
 

@@ -2,6 +2,7 @@ import json
 import re
 import requests
 import spacy
+from ollama import Client
 
 class ConceptsModel:
     def __init__(self, base_url="http://localhost:11434"):
@@ -9,6 +10,7 @@ class ConceptsModel:
         self.generate_url = f"{base_url}/api/generate"
         # Load spaCy model
         self.nlp = spacy.load('en_core_web_sm')  # Using English model
+        self.client = Client(host=self.generate_url)
         
     def clean_text(self, text):
         """Cleans text from punctuation and special characters."""
@@ -78,7 +80,7 @@ class ConceptsModel:
         }
         
         try:
-            response = requests.post(self.generate_url, json=payload)
+            response = self.client.generate(payload)
             response.raise_for_status()
             response_json = response.json()
             content = response_json.get('response', '').strip()
