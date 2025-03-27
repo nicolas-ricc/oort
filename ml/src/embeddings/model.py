@@ -35,12 +35,12 @@ class EmbeddingModel:
             
             # Solo procesamos textos no vacíos
             if text:
-                print(f"Procesando texto: '{text[:50]}...'")  # Debug
+                print(f"Processing: '{text[:50]}...'")  # Debug
                 embedding = self.get_contextual_embeddings(text)
                 if embedding is not None:
                     embeddings.append(embedding)
             else:
-                print("Se encontró un texto vacío, saltando...")
+                print("This is an empty text, skipping...")  # Debug
                 
         return embeddings
 
@@ -49,7 +49,7 @@ class EmbeddingModel:
         Generates embeddings for a complete text.
         """
         if not text or not isinstance(text, str):
-            print(f"Error: texto inválido - tipo: {type(text)}")
+            print(f"Error: invalid text of type:  {type(text)}")
             return None
 
         payload = {
@@ -59,7 +59,7 @@ class EmbeddingModel:
 
         try:
             # Debug info
-            print(f"Enviando solicitud a {self.embedding_url}")
+            print(f"Sending request to: {self.embedding_url}")
             print(f"Payload: {json.dumps(payload, ensure_ascii=False)}")
             
             response = requests.post(

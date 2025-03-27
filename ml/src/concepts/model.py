@@ -1,16 +1,19 @@
 import json
 import re
-import requests
 import spacy
 from ollama import Client
 
 class ConceptsModel:
     def __init__(self, base_url="http://localhost:11434"):
         self.base_url = base_url
-        self.generate_url = f"{base_url}/api/generate"
+        # Initialize the Ollama client - but don't include the http:// prefix that's handled internally
+        if base_url.startswith("http://"):
+            base_url = base_url[7:]
+        elif base_url.startswith("https://"):
+            base_url = base_url[8:]
+        self.client = Client(host=base_url)
         # Load spaCy model
-        self.nlp = spacy.load('en_core_web_sm')  # Using English model
-        self.client = Client(host=self.generate_url)
+        self.nlp = spacy.load('en_core_web_sm')
         
     def clean_text(self, text):
         """Cleans text from punctuation and special characters."""
@@ -68,22 +71,20 @@ class ConceptsModel:
         - Colons or semicolons"""
 
         template = f"Extract 5-10 key concepts from this text as simple words or short phrases separated by commas ONLY: {text[:500]}..."
-
-        payload = {
-            "model": model,
-            "prompt": template,
-            "system": system_prompt,
-            "options": {
-                "temperature": 0
-            },
-            "stream": False
-        }
         
         try:
-            response = self.client.generate(payload)
-            response.raise_for_status()
-            response_json = response.json()
-            content = response_json.get('response', '').strip()
+            print(f"Requesting concepts using ollama client with model: {model}")
+            
+            # Use the client with proper parameters according to the ollama client docs
+            response = self.client.generate(
+                model=model,
+                prompt=template,
+                system=system_prompt,
+                options={"temperature": 0}
+            )
+            
+            # The response is a dictionary, not a requests.Response object
+            content = response.get('response', '').strip()
             
             print("Content received:", content)
             
