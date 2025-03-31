@@ -74,17 +74,17 @@ class EmbeddingModel:
                 return None
                 
             embedding_data = response.json()
-            
+            print(embedding_data)  # Debug
             if "embedding" in embedding_data:
                 return np.array(embedding_data['embedding'])
             else:
-                print(f"Respuesta inesperada: {embedding_data}")
+                print(f"Embedding response is in wrong format: {embedding_data}")
                 return None
             
         except requests.exceptions.RequestException as e:
-            print(f"Error en la solicitud HTTP: {str(e)}")
+            print(f"HTTP Error: {str(e)}")
             if hasattr(e, 'response') and e.response is not None:
-                print(f"Respuesta del servidor: {e.response.text}")
+                print(f"Server response: {e.response.text}")
             return None
 
     def get_similarity(self, embedding1: np.ndarray, embedding2: np.ndarray) -> float:

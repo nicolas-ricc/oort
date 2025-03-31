@@ -9,24 +9,31 @@ export const Menu = ({ concepts, onSelect, activeIndex, setActiveIndex, onSimula
 
     const [isUploading, setIsUploading] = useState(false)
     const { mutate: uploadFile } = useMutation({
-        mutationFn: (event: ChangeEvent) => {
-            const file = event.target.files[0];
+        mutationFn: async (event: ChangeEvent) => {
+            const [file] = event.target.files
             if (!file) return;
-
             const reader = new FileReader();
-            reader.onload = async (e) => {
-                const text = e.target.result;
-                return fetch('http://localhost:8000/api/vectorize', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        "Accept-Cross-Origin": "*",
-                        "Access-Control-Allow-Origin": "*",
-                    },
-                    body: JSON.stringify({ text }),
+            const handleFileUpload = async (file: File, reader: FileReader) => {
+                return new Promise((resolve, reject) => {
+                    reader.onload = async (e) => {
+                        const text = e.target?.result as string;
+                        resolve(text)
+                    }
+                    reader.readAsText(file);
                 })
             }
-            reader.readAsText(file);
+            await handleFileUpload(file, reader)
+            const res = await fetch('http://localhost:8000/api/vectorize', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    "Accept-Cross-Origin": "*",
+                    "Access-Control-Allow-Origin": "*",
+                },
+                body: JSON.stringify({ text: reader.result }),
+            }).then(async(res) => res.json())
+            const vectors = res.data
+            return vectors
         },
         onMutate: () => {
             setIsUploading(true)

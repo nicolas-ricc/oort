@@ -29,6 +29,7 @@ class ConceptsModel:
         """Lemmatizes a concept maintaining phrase structure."""
         # First clean the text
         concept = self.clean_text(concept)
+        print("LOGGING: Cleaned concept:", concept)
         doc = self.nlp(concept)
         lemmatized_words = []
         
@@ -57,7 +58,7 @@ class ConceptsModel:
         result = ' '.join(lemmatized_words).strip()
         return result
 
-    def generate_concepts(self, text, model="cognitivetech/obook_summary"):
+    def generate_concepts(self, text, model="phi3.5"):
         system_prompt = """You are a concept extractor that MUST:
         1. Extract key concepts from the text
         2. Output ONLY simple concepts separated by commas (NO bullet points, NO descriptions)
@@ -104,7 +105,7 @@ class ConceptsModel:
                     lemmatized = self.lemmatize_concept(concept)
                     concepts.append({"concept": lemmatized})
             
-            print("Lemmatized concepts:", concepts)
+            print("LOGGING: Lemmatized concepts:", concepts)
             return concepts
                 
         except Exception as e:
