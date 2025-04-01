@@ -1,6 +1,6 @@
 import { Html, Sparkles, useTexture } from "@react-three/drei";
-import { useLoader, useFrame } from "@react-three/fiber";
-import { useMemo, useRef, useState } from "react";
+import { useFrame } from "@react-three/fiber";
+import { useRef } from "react";
 import * as THREE from "three";
 import { Mesh } from "three";
 

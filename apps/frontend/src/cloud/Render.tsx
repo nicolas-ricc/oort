@@ -2,6 +2,7 @@
 import { Suspense } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./Scene";
+import { Bounds, CameraControls, PerspectiveCamera } from "@react-three/drei";
 
 function Render({ simulation, activeNode }) {
 
@@ -36,14 +37,19 @@ function Render({ simulation, activeNode }) {
   };
   const nodesAndConcepts = simulation.map(({ reduced_embedding, concepts }) => [reduced_embedding, concepts])
   const positions = nodesAndConcepts.map(n => n[0])
-  return (
-    <Canvas camera={{...calculateCameraPosition(positions)}} className="w-full h-full">
 
+  return (
+    <Canvas className="w-full h-full">
+      <PerspectiveCamera makeDefault position={calculateCameraPosition(positions).position}  />
+      <CameraControls makeDefault/>
+      <color attach="background" args={['#060605']} />
       <Suspense fallback={null}>
+      <Bounds  clip observe margin={1.2} maxDuration={1} >
         <Scene
           nodes={nodesAndConcepts}
           activeNode={activeNode}
         />
+        </Bounds>
       </Suspense>
 
     </Canvas>
