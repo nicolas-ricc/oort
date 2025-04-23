@@ -1,81 +1,88 @@
 [
-  {
-      "concepts": [
-          "Happy Prince"
-      ],
-      "reduced_embedding": [
-          0.754507873183398,
-          3.418565130267346,
-          7.544316446844119
-      ],
-      "cluster": 2
-  },
-  {
-      "concepts": [
-          "golden statue"
-      ],
-      "reduced_embedding": [
-          5.709226750817894,
-          -0.4749286996598511,
-          -1.1655456872816539
-      ],
-      "cluster": 0
-  },
-  {
-      "concepts": [
-          "gild column"
-      ],
-      "reduced_embedding": [
-          7.321427998784,
-          -2.8051537302609098,
-          -1.7049271788189106
-      ],
-      "cluster": 0
-  },
-  {
-      "concepts": [
-          "bright sapphire",
-          "red ruby"
-      ],
-      "reduced_embedding": [
-          -1.075082777843627,
-          0.03150990439490807,
-          -1.2298892603161227
-      ],
-      "cluster": 1
-  },
-  {
-      "concepts": [
-          "admiration",
-          "artistic taste"
-      ],
-      "reduced_embedding": [
-          -2.446413510514039,
-          -0.3620187195880975,
-          0.5367076869265595
-      ],
-      "cluster": 2
-  },
-  {
-      "concepts": [
-          "beautiful weathercock"
-      ],
-      "reduced_embedding": [
-          -3.587847047687407,
-          6.832973443144626,
-          -4.254825810724967
-      ],
-      "cluster": 1
-  },
-  {
-      "concepts": [
-          "unpractical"
-      ],
-      "reduced_embedding": [
-          -6.675819286740216,
-          -6.6409473282980205,
-          0.274163803370978
-      ],
-      "cluster": 2
-  }
+    {
+        "concepts": [
+            "Happy Prince"
+        ],
+        "texture": "aerial10",
+        "reduced_embedding": [
+            0.754507873183398,
+            3.418565130267346,
+            7.544316446844119
+        ],
+        "cluster": 2
+    },
+    {
+        "concepts": [
+            "golden statue"
+        ],
+        "texture": "aerial7",
+        "reduced_embedding": [
+            5.709226750817894,
+            -0.4749286996598511,
+            -1.1655456872816539
+        ],
+        "cluster": 0
+    },
+    {
+        "concepts": [
+            "gild column"
+        ],
+        "texture": "aerial3",
+        "reduced_embedding": [
+            7.321427998784,
+            -2.8051537302609098,
+            -1.7049271788189106
+        ],
+        "cluster": 0
+    },
+    {
+        "concepts": [
+            "bright sapphire",
+            "red ruby"
+        ],
+        "texture": "aerial6",
+        "reduced_embedding": [
+            -1.075082777843627,
+            0.03150990439490807,
+            -1.2298892603161227
+        ],
+        "cluster": 1
+    },
+    {
+        "concepts": [
+            "admiration",
+            "artistic taste"
+        ],
+        "texture": "aerial5",
+        "reduced_embedding": [
+            -2.446413510514039,
+            -0.3620187195880975,
+            0.5367076869265595
+        ],
+        "cluster": 2
+    },
+    {
+        "concepts": [
+            "beautiful weathercock"
+        ],
+        "texture": "aerial4",
+        "reduced_embedding": [
+            -3.587847047687407,
+            6.832973443144626,
+            -4.254825810724967
+        ],
+        "cluster": 1
+    },
+    {
+        "concepts": [
+            "unpractical"
+        ],
+        "texture": "aerial3",
+        "reduced_embedding": [
+            -6.675819286740216,
+            -6.6409473282980205,
+            0.274163803370978
+        ],
+        "cluster": 2
+    }
 ]

@@ -1,41 +1,45 @@
 import Render from './cloud/Render'
 import simulation from "./mocks/simulation.json"
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Menu } from './layout/Menu'
 import { Layout } from './layout/Layout'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-type Simulation = {
+
+export type ConceptCluster = {
   concepts: string[];
   reduced_embedding: number[];
   cluster: number;
-}[]
+}
+
+export type Simulation = ConceptCluster[]
 
 function App() {
   const [simulationData, setSimulationData] = useState<Simulation>(simulation)
-  const [active, setActive] = useState<number>(0)
+  const [active, setActive] = useState<string>(simulationData[0]?.reduced_embedding.join(""))
 
-  const concepts = simulationData?.map(({ concepts }) => concepts).flat() || []
-
-  
+  useMemo(() => {
+    console.log(active)
+  }
+    , [active])
   const handleSimulationUpdate = useCallback((newData) => {
-    console.log("NEW DATA", newData)
     setSimulationData(newData)
-    setActive(0)
+    setActive(newData[0]?.reduced_embedding.join(""))
   }, [])
+
   const client = new QueryClient()
-  return ( <QueryClientProvider client={client}>
+  return (<QueryClientProvider client={client}>
     <Layout>
-        <Render simulation={simulationData} activeNode={active}/>
-        <Menu concepts={concepts} onSelect={(id) => {
-          console.log("clicked", id)
-          setActive(id)}}
-          onSimulationUpdate={handleSimulationUpdate}
-          activeIndex={active}
-          setActiveIndex={setActive}
-          />
+      <Render simulation={simulationData} activeNode={active} setActive={setActive} />
+      <Menu concepts={simulationData}
+        onSelect={(concept) => {
+          setActive((simulationData.find(s => s.concepts.includes(concept)) || simulationData[0]).reduced_embedding.join(""))
+        }}
+        onSimulationUpdate={handleSimulationUpdate}
+        active={active}
+      />
     </Layout>
-    </QueryClientProvider>
+  </QueryClientProvider>
   )
 }
 

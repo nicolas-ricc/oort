@@ -3,13 +3,21 @@ import { cn } from "@/lib/utils"
 import { Upload } from "lucide-react"
 import { ChangeEvent, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
+import { ConceptCluster, Simulation } from "@/App"
 
 
-export const Menu = ({ concepts, onSelect, activeIndex, setActiveIndex, onSimulationUpdate }) => {
+export const Menu = ({ concepts, onSelect, active, onSimulationUpdate }: {
+    concepts: Simulation,
+    onSelect: (concept: string) => void,
+    active: string,
+    onSimulationUpdate: (data: any) => void
+    }
+) => {
 
     const [isUploading, setIsUploading] = useState(false)
     const { mutate: uploadFile } = useMutation({
         mutationFn: async (event: ChangeEvent) => {
+            //@ts-ignore
             const [file] = event.target.files
             if (!file) return;
             const reader = new FileReader();
@@ -60,8 +68,10 @@ export const Menu = ({ concepts, onSelect, activeIndex, setActiveIndex, onSimula
 
                 <Command className="rounded-none border-none bg-transparent">
                     <div className="border-y border-terminal-border px-3 py-1 bg-terminal-bg flex justify-between items-center">
-                        <CommandInput className="border-none outline-none text-terminal-text bg-transparent placeholder-terminal-muted caret-terminal-text text-[16px]"
+                        <div  className="border-none outline-none text-terminal-text bg-transparent placeholder-terminal-muted caret-terminal-text text-[16px]  w-lg">
+                        <CommandInput
                             placeholder="What are you looking for..." />
+                            </div>
                         <label htmlFor="file-upload" className={`cursor-pointer flex items-center justify-center w-10 h-10 rounded-md transition-colors ${isUploading ? 'text-gray-500' : 'text-terminal-text hover:text-green-300 hover:bg-zinc-800'}`}>
                             <Upload size={20} />
                             <input
@@ -79,16 +89,20 @@ export const Menu = ({ concepts, onSelect, activeIndex, setActiveIndex, onSimula
                         <CommandEmpty className="px-4 py-8 text-center text-terminal-muted">No results found.</CommandEmpty>
                         <CommandGroup className="bg-terminal-bg text-terminal-text">
 
-                            {concepts.map((concept: string, index: number) => (
-                                <CommandItem onSelect={() => onSelect(index)} key={concept} className={cn(
-                                    "px-4 py-3 cursor-pointer transition-colors text-[32px]",
-                                    activeIndex === index
-                                        ? " "
-                                        : "text-terminal-text hover:bg-zinc-800 hover:text-green-300",
-                                )}>
-                                    <span >{concept}</span>
-                                </CommandItem>
-                            ))}
+                            {concepts.map((concept: ConceptCluster) => {
+                                return concept.concepts.map((individualConcept) => {
+                                    return (
+                                        <CommandItem onSelect={() => onSelect(individualConcept)} key={individualConcept} className={cn(
+                                            "px-4 py-3 cursor-pointer transition-colors text-[32px]",
+                                            active === concept.reduced_embedding.join("")
+                                                ? "bg-zinc-800 "
+                                                : "text-terminal-text hover:bg-zinc-800 hover:text-green-300",
+                                        )}>
+                                            <span >{individualConcept}</span>
+                                        </CommandItem>
+                                    )
+                                })
+                               })}
                         </CommandGroup>
 
                     </CommandList>

@@ -28,7 +28,7 @@ export function Planet({ texturePath, position, onClick, concepts, isSelected })
 
 
     return (
-        <group position={position}>
+        <group position={position.map(position => parseFloat(position))}>
             {isSelected && (
                 <mesh ref={auraRef} position={[0, 0, 0]}>
                     <sphereGeometry args={[1.2 * scale[0], 32, 32]} />
