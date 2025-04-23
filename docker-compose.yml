@@ -1,7 +1,7 @@
 version: '3'
 
 services:
-  # Backend FastAPI service
+  # New Backend Rust service
   oort-ml:
     build:
       context: ./ml
@@ -9,11 +9,13 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./ml:/app
+      - ./oort-ml-rust:/app/src  # For development only
     environment:
-      - PYTHONPATH=/app
+      - RUST_LOG=info
+      - OLLAMA_URL=http://ollama:11434
     depends_on:
       - ollama
+
 
   # Frontend React service
   oort-fe-app:
@@ -27,6 +29,7 @@ services:
       - /app/node_modules
     environment:
       - NODE_ENV=development
+      - REACT_APP_API_URL=http://localhost:8000
     depends_on:
       - oort-ml
 
@@ -37,7 +40,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    command: serve
+    command: "serve & ollama pull cognitivetech/obook_summary"
 
 volumes:
   ollama_data:

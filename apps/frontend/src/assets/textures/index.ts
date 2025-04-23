@@ -1,0 +1,11 @@
+import aerial2 from "./aerial2.jpg";
+import aerial3 from "./aerial3.jpg";
+import aerial4 from "./aerial4.jpg";
+import aerial5 from "./aerial5.jpg";
+import aerial6 from "./aerial6.jpg";
+import aerial7 from "./aerial7.jpg";
+import aerial8 from "./aerial8.jpg";
+import aerial9 from "./aerial9.jpg";
+import aerial10 from "./aerial10.jpg";
+import aerial11 from "./aerial11.jpg";
+export const textures = [aerial2, aerial3, aerial4, aerial5, aerial6, aerial7, aerial8, aerial9, aerial10, aerial11] as string[];

@@ -1,5 +1,5 @@
 # Dependencies
-node_modules
+*node_modules*
 .pnp
 .pnp.js
 
@@ -7,11 +7,12 @@ node_modules
 coverage
 
 # Production
-build
-dist
-lib
+*/target*
+*/build*
+*/dist*
 */lib*
 */bin*
+
 # Misc
 .DS_Store
 .env.local
@@ -19,11 +20,6 @@ lib
 .env.test.local
 .env.production.local
 
-# Python
-env/
-__pycache__/
-*.pyc
-.pytest_cache/
 
 # Logs
 npm-debug.log*

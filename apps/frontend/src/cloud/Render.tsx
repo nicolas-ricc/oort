@@ -1,10 +1,10 @@
 // App.js
-import { Suspense } from "react";
+import { Suspense, useRef } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Scene } from "./Scene";
-import { Bounds, CameraControls, PerspectiveCamera } from "@react-three/drei";
+import { Bounds, OrbitControls, PerspectiveCamera } from "@react-three/drei";
 
-function Render({ simulation, activeNode }) {
+function Render({ simulation, activeNode, setActive }) {
 
   // Función para calcular el centro y la distancia óptima
   const calculateCameraPosition = (nodes) => {
@@ -35,22 +35,27 @@ function Render({ simulation, activeNode }) {
       target: center
     };
   };
-  const nodesAndConcepts = simulation.map(({ reduced_embedding, concepts }) => [reduced_embedding, concepts])
-  const positions = nodesAndConcepts.map(n => n[0])
+  const cameraRef = useRef(HTMLElement.prototype);
+  const positions = simulation.map(n => n.reduced_embedding.map(pos => parseFloat(pos)));
 
   return (
-    <Canvas className="w-full h-full">
-      <PerspectiveCamera makeDefault position={calculateCameraPosition(positions).position}  />
-      <CameraControls makeDefault/>
+    <Canvas className="w-full h-full" >
       <color attach="background" args={['#060605']} />
-      <Suspense fallback={null}>
-      <Bounds  clip observe margin={1.2} maxDuration={1} >
-        <Scene
-          nodes={nodesAndConcepts}
-          activeNode={activeNode}
-        />
-        </Bounds>
-      </Suspense>
+      <PerspectiveCamera makeDefault position={calculateCameraPosition(positions).position}>
+        {(texture) =>
+        (<>  <OrbitControls makeDefault />
+          <Suspense fallback={null}>
+            <Bounds clip observe margin={1.2} maxDuration={1} >
+              <Scene
+                nodes={simulation}
+                activeNode={activeNode}
+                setActive={setActive}
+              />
+            </Bounds>
+          </Suspense>
+        </>)
+        }
+      </PerspectiveCamera>
 
     </Canvas>
   );

@@ -1,0 +1,36 @@
+[package]
+name = "oort-ml-rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4.4"
+actix-cors = "0.6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.32", features = ["full"] }
+anyhow = "1.0"
+thiserror = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+ndarray = { version = "0.15", features = ["approx"] }
+ndarray-linalg = { version = "0.16", features = ["openblas-system"] }
+ndarray-stats = "0.5"
+rand = "0.8"
+env_logger = "0.10"
+log = "0.4"
+futures = "0.3"
+bytes = "1.5"
+regex = "1.9"
+
+# For ML operations
+linfa = "0.7"
+linfa-clustering = "0.7"
+linfa-reduction = "0.7"
+
+# For text processing
+tokenizers = "0.14"
+rust-stemmers = "1.2"
+
+[features]
+default = []
+full-nlp = []
