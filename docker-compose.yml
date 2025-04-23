@@ -40,7 +40,7 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    command: "serve & ollama pull cognitivetech/obook_summary"
+    command: "serve & ollama pull phi3.5"
 
 volumes:
   ollama_data:

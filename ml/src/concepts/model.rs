@@ -1,5 +1,5 @@
 use crate::error::ApiError;
-use log::{info, debug};
+use log::{debug, info};
 use regex::Regex;
 use reqwest::Client;
 use rust_stemmers::{Algorithm, Stemmer};
@@ -17,11 +17,12 @@ struct OllamaRequest {
     prompt: String,
     system: String,
     options: OllamaOptions,
+    stream: bool
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct OllamaOptions {
-    temperature: f32,
+    temperature: f32
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,45 +43,46 @@ impl ConceptsModel {
             .timeout(Duration::from_secs(60))
             .build()
             .expect("Failed to create HTTP client");
-            
+
         Self {
             base_url: base_url.to_string(),
             client,
-            model: "cognitivetech/obook_summary".to_string(),
+            model: "phi3.5".to_string(),
             stemmer: Stemmer::create(Algorithm::English),
         }
     }
-    
+
     pub fn clean_text(&self, text: &str) -> String {
         // Clean punctuation except apostrophes
         let re_punct = Regex::new(r"[^\w\s']").unwrap();
         let text = re_punct.replace_all(text, " ");
-        
+
         // Remove apostrophes if not part of contractions
         let re_apos = Regex::new(r"\s'|'\s").unwrap();
         let text = re_apos.replace_all(&text, " ");
-        
+
         // Remove multiple spaces
         let re_spaces = Regex::new(r"\s+").unwrap();
         let text = re_spaces.replace_all(&text, " ");
-        
+
         text.trim().to_string()
     }
-    
+
     pub fn lemmatize_concept(&self, concept: &str) -> String {
         let concept = self.clean_text(concept);
-        
+
         // Split into words and lemmatize
         let words: Vec<&str> = concept.split_whitespace().collect();
-        
+
         // Simple lemmatization using stemmer
-        let lemmatized_words: Vec<String> = words.iter()
+        let lemmatized_words: Vec<String> = words
+            .iter()
             .map(|word| self.stemmer.stem(word).to_string())
             .collect();
-        
+
         lemmatized_words.join(" ")
     }
-    
+
     pub async fn generate_concepts(&self, text: &str) -> Result<Vec<Concept>, ApiError> {
         let system_prompt = r#"You are a concept extractor that MUST:
         1. Extract key concepts from the text
@@ -93,34 +95,36 @@ impl ConceptsModel {
         - Descriptions or explanations
         - Newlines
         - Colons or semicolons"#;
-        
+
         // Take only the first 500 characters to match Python implementation
         let truncated_text = if text.len() > 500 {
             format!("{}...", &text[..500])
         } else {
             text.to_string()
         };
-        
+
         let template = format!(
             "Extract 5-10 key concepts from this text as simple words or short phrases separated by commas ONLY: {}",
             truncated_text
         );
-        
+
         info!("Requesting concepts using model: {}", self.model);
-        
+
         let request = OllamaRequest {
             model: self.model.clone(),
             prompt: template,
             system: system_prompt.to_string(),
             options: OllamaOptions { temperature: 0.0 },
+            stream: false
         };
-        
+
         // Build the URL for the Ollama generate endpoint
         let url = format!("{}/api/generate", self.base_url);
         debug!("Sending request to: {}", url);
-        
+
         // Make the request to Ollama
-        let response = self.client
+        let response = self
+            .client
             .post(url)
             .json(&request)
             .send()
@@ -129,21 +133,29 @@ impl ConceptsModel {
                 info!("Error requesting concepts: {}", e);
                 ApiError::RequestError(e)
             })?;
-        
-        let ollama_response: OllamaResponse = response.json().await
-            .map_err(|e| {
-                info!("Error parsing response: {}", e);
-                ApiError::RequestError(e)
-            })?;
-            
+        let body = response.text().await.map_err(|e| {
+            info!("Error extracting response text: {}", e);
+            ApiError::RequestError(e)
+        })?;
+
+        info!("Raw response: {}", body);
+
+        // After logging, parse the JSON from the text
+        let ollama_response: OllamaResponse = serde_json::from_str(&body).map_err(|e| {
+            info!("Error parsing response JSON: {}", e);
+            ApiError::InternalError(format!("JSON parse error: {}", e))
+        })?;
+
         // Clean the content
-        let content = ollama_response.response.trim()
+        let content = ollama_response
+            .response
+            .trim()
             .replace('\n', "")
             .replace("- ", "")
             .replace(": ", ", ");
-            
+
         debug!("Content received: {}", content);
-        
+
         // Process and lemmatize concepts
         let mut concepts = Vec::new();
         for concept in content.split(',') {
@@ -151,10 +163,12 @@ impl ConceptsModel {
             if !concept.is_empty() && concept.split_whitespace().count() <= 3 {
                 // Lemmatize the concept
                 let lemmatized = self.lemmatize_concept(concept);
-                concepts.push(Concept { concept: lemmatized });
+                concepts.push(Concept {
+                    concept: lemmatized,
+                });
             }
         }
-        
+
         debug!("Lemmatized concepts: {:?}", concepts);
         Ok(concepts)
     }
