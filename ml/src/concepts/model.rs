@@ -112,7 +112,7 @@ impl ConceptsModel {
         // Simple lemmatization using stemmer
         let lemmatized_words: Vec<String> = words
             .iter()
-            .map(|word| self.stemmer.stem(word).to_string())
+            .map(|word| word.to_string())
             .collect();
 
         lemmatized_words.join(" ")
