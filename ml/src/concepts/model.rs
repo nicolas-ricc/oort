@@ -17,19 +17,54 @@ struct OllamaRequest {
     prompt: String,
     system: String,
     options: OllamaOptions,
-    stream: bool
+    format: OllamaFormat,
+    stream: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OllamaFormat {
+    r#type: String,
+    properties: Properties,
+    required: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Schema {
+    r#type: String,
+    properties: Properties,
+    required: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Properties {
+    concepts: ConceptsSchema,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ConceptsSchema {
+    r#type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct Items {
+    #[serde(rename = "type")]
+    item_type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct OllamaOptions {
-    temperature: f32
+    temperature: f32,
 }
 
+#[derive(Debug, Deserialize)]
+
+struct ResponseContent {
+    concepts: Vec<String>,
+}
 #[derive(Debug, Deserialize)]
 struct OllamaResponse {
     response: String,
 }
-
 pub struct ConceptsModel {
     base_url: String,
     client: Client,
@@ -107,21 +142,29 @@ impl ConceptsModel {
             "Extract 5-10 key concepts from this text as simple words or short phrases separated by commas ONLY: {}",
             truncated_text
         );
-
+        let format: OllamaFormat = OllamaFormat {
+            r#type: "object".to_string(),
+            properties: Properties {
+                concepts: ConceptsSchema {
+                    r#type: "array".to_string(),
+                },
+            },
+            required: ["concepts".to_string()].to_vec(),
+        };
         info!("Requesting concepts using model: {}", self.model);
-
         let request = OllamaRequest {
             model: self.model.clone(),
             prompt: template,
             system: system_prompt.to_string(),
             options: OllamaOptions { temperature: 0.0 },
-            stream: false
+            format: format,
+            stream: false,
         };
 
         // Build the URL for the Ollama generate endpoint
         let url = format!("{}/api/generate", self.base_url);
         debug!("Sending request to: {}", url);
-
+        info!("Request body: {:?}", request);
         // Make the request to Ollama
         let response = self
             .client
@@ -133,6 +176,7 @@ impl ConceptsModel {
                 info!("Error requesting concepts: {}", e);
                 ApiError::RequestError(e)
             })?;
+
         let body = response.text().await.map_err(|e| {
             info!("Error extracting response text: {}", e);
             ApiError::RequestError(e)
@@ -146,23 +190,26 @@ impl ConceptsModel {
             ApiError::InternalError(format!("JSON parse error: {}", e))
         })?;
 
-        // Clean the content
-        let content = ollama_response
-            .response
-            .trim()
-            .replace('\n', "")
-            .replace("- ", "")
-            .replace(": ", ", ");
+        // Define a struct to parse the nested JSON in the response field
+        #[derive(Debug, Deserialize)]
+        struct ConceptsResponse {
+            concepts: Vec<String>,
+        }
 
-        debug!("Content received: {}", content);
+        // Parse the nested JSON
+        let concepts_response: ConceptsResponse = serde_json::from_str(&ollama_response.response)
+            .map_err(|e| {
+            info!("Error parsing nested JSON: {}", e);
+            ApiError::InternalError(format!("Failed to parse concepts JSON: {}", e))
+        })?;
 
         // Process and lemmatize concepts
         let mut concepts = Vec::new();
-        for concept in content.split(',') {
+        for concept in concepts_response.concepts {
             let concept = concept.trim();
             if !concept.is_empty() && concept.split_whitespace().count() <= 3 {
                 // Lemmatize the concept
-                let lemmatized = self.lemmatize_concept(concept);
+                let lemmatized = self.lemmatize_concept(&concept);
                 concepts.push(Concept {
                     concept: lemmatized,
                 });

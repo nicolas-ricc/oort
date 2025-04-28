@@ -1,8 +1,27 @@
 // App.js
 import { Suspense, useRef } from "react";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame } from "@react-three/fiber";
 import { Scene } from "./Scene";
-import { Bounds, OrbitControls, PerspectiveCamera } from "@react-three/drei";
+import { Bounds, OrbitControls, PerspectiveCamera, Trail } from "@react-three/drei";
+import * as THREE from "three";
+import { EffectComposer, Bloom } from '@react-three/postprocessing'
+
+
+function ShootingStar() {
+  const ref = useRef()
+  useFrame((state) => {
+    const t = state.clock.getElapsedTime() * 2
+    ref.current.position.set(Math.sin(t) * 4, Math.atan(t) * Math.cos(t / 2) * 2, Math.cos(t) * 4)
+  })
+  return (
+    <Trail width={5} length={8} color={new THREE.Color(2, 1, 10)} attenuation={(t) => t * t}>
+      <mesh ref={ref}>
+        <sphereGeometry args={[0.25]} />
+        <meshBasicMaterial color={[10, 1, 10]} toneMapped={false} />
+      </mesh>
+    </Trail>
+  )
+}
 
 function Render({ simulation, activeNode, setActive }) {
 
@@ -35,23 +54,27 @@ function Render({ simulation, activeNode, setActive }) {
       target: center
     };
   };
-  const cameraRef = useRef(HTMLElement.prototype);
+  const cameraRef = useRef(PerspectiveCamera.prototype);
   const positions = simulation.map(n => n.reduced_embedding.map(pos => parseFloat(pos)));
 
   return (
     <Canvas className="w-full h-full" >
       <color attach="background" args={['#060605']} />
-      <PerspectiveCamera makeDefault position={calculateCameraPosition(positions).position}>
-        {(texture) =>
+      <PerspectiveCamera makeDefault position={calculateCameraPosition(positions).position} ref={cameraRef} >
+        {(_texture) =>
         (<>  <OrbitControls makeDefault />
           <Suspense fallback={null}>
             <Bounds clip observe margin={1.2} maxDuration={1} >
+              <ShootingStar />
+
               <Scene
                 nodes={simulation}
                 activeNode={activeNode}
                 setActive={setActive}
               />
+
             </Bounds>
+
           </Suspense>
         </>)
         }

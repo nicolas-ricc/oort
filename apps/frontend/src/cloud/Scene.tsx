@@ -4,11 +4,12 @@ import { Planet } from "./Planet";
 import { textures } from "@/assets/textures";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
+import ShootingStarsAnimation from "./ShootingStars";
 
 export function Scene({ nodes, activeNode, setActive }) {
     useThree(({ camera }) => {
         camera.rotation.set(THREE.MathUtils.degToRad(30), 0, 0);
-      });
+    });
 
     return (
         <>

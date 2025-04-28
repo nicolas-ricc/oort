@@ -2,34 +2,27 @@ FROM rust:slim AS builder
 
 WORKDIR /usr/src/app
 
-# Install build dependencies
+# Install build dependencies and cargo-watch
 RUN apt-get update && \
     apt-get install -y pkg-config libssl-dev libopenblas-dev liblapack-dev g++ build-essential && \
+    cargo install cargo-watch && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy the entire project
+# Copy Cargo.toml and Cargo.lock
+COPY Cargo.toml Cargo.lock* ./
+
+# Create a dummy src/main.rs to build dependencies
+RUN mkdir -p src && \
+    echo "fn main() {}" > src/main.rs && \
+    cargo build && \
+    rm -rf src
+
+# Copy the actual source code
 COPY . .
-
-# Build the project
-RUN cargo build --release
-
-# Create a smaller runtime image
-FROM debian:bookworm-slim
-
-WORKDIR /app
-
-# Install runtime dependencies
-RUN apt-get update && \
-    apt-get install -y openssl ca-certificates libopenblas0 liblapack3 && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-# Copy the binary from the builder stage
-COPY --from=builder /usr/src/app/target/release/oort-ml-rust /app/oort-ml-rust
 
 # Expose the port
 EXPOSE 8000
 
-# Command to run the executable
-CMD ["./oort-ml-rust"]
+# Command to run with hot-reloading
+CMD ["cargo", "watch", "-x", "run", "-w", "src"]

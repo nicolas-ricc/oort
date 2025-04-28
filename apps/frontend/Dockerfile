@@ -18,4 +18,4 @@ COPY . .
 EXPOSE 3000
 
 # Start the app in development mode with hot reloading
-CMD ["pnpm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["pnpm", "run", "dev", "--host", "0.0.0.0"]

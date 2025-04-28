@@ -1,21 +1,18 @@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { cn } from "@/lib/utils"
 import { Upload } from "lucide-react"
-import { ChangeEvent, useState } from "react"
+import { ChangeEvent } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { ConceptCluster, Simulation } from "@/App"
 
-
-export const Menu = ({ concepts, onSelect, active, onSimulationUpdate }: {
+export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadingState }: {
     concepts: Simulation,
     onSelect: (concept: string) => void,
     active: string,
-    onSimulationUpdate: (data: any) => void
-    }
-) => {
-
-    const [isUploading, setIsUploading] = useState(false)
-    const { mutate: uploadFile } = useMutation({
+    onSimulationUpdate: (data: any) => void,
+    setLoadingState: (loading: boolean) => void
+}) => {
+    const { mutate: uploadFile, isPending } = useMutation({
         mutationFn: async (event: ChangeEvent) => {
             //@ts-ignore
             const [file] = event.target.files
@@ -44,7 +41,8 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate }: {
             return vectors
         },
         onMutate: () => {
-            setIsUploading(true)
+            // Set the global loading state to true
+            setLoadingState(true)
         },
         onSuccess: (data) => {
             onSimulationUpdate(data)
@@ -54,13 +52,13 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate }: {
             alert('Error processing file. Please try again.');
         },
         onSettled: () => {
-            setIsUploading(false)
+            // Set the global loading state to false when done
+            setLoadingState(false)
         }
     })
 
-
     return (
-        <div className=" [>*]:text-[32px] bg-terminal-bg border-2 border-terminal-border shadow-lg overflow-hidden relative h-full mx-auto">
+        <div className="[>*]:text-[32px] bg-terminal-bg border-2 border-terminal-border shadow-lg overflow-hidden relative h-full mx-auto">
             <div className="relative h-full">
 
                 <div className="absolute inset-0 pointer-events-none z-10 bg-[repeating-linear-gradient(0deg,rgba(0,0,0,0.15),rgba(0,0,0,0.15)_1px,transparent_1px,transparent_2px)]"></div>
@@ -68,11 +66,11 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate }: {
 
                 <Command className="rounded-none border-none bg-transparent">
                     <div className="border-y border-terminal-border px-3 py-1 bg-terminal-bg flex justify-between items-center">
-                        <div  className="border-none outline-none text-terminal-text bg-transparent placeholder-terminal-muted caret-terminal-text text-[16px]  w-lg">
+                        <div className="border-none outline-none text-terminal-text bg-transparent placeholder-terminal-muted caret-terminal-text text-[16px] w-lg">
                         <CommandInput
                             placeholder="What are you looking for..." />
-                            </div>
-                        <label htmlFor="file-upload" className={`cursor-pointer flex items-center justify-center w-10 h-10 rounded-md transition-colors ${isUploading ? 'text-gray-500' : 'text-terminal-text hover:text-green-300 hover:bg-zinc-800'}`}>
+                        </div>
+                        <label htmlFor="file-upload" className={`cursor-pointer flex items-center justify-center w-10 h-10 rounded-md transition-colors ${isPending ? 'text-gray-500' : 'text-terminal-text hover:text-green-300 hover:bg-zinc-800'}`}>
                             <Upload size={20} />
                             <input
                                 id="file-upload"
@@ -80,7 +78,7 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate }: {
                                 accept=".txt,.md,.text"
                                 className="hidden"
                                 onChange={uploadFile}
-                                disabled={isUploading}
+                                disabled={isPending}
                             />
                         </label>
                     </div>
@@ -98,11 +96,11 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate }: {
                                                 ? "bg-zinc-800 "
                                                 : "text-terminal-text hover:bg-zinc-800 hover:text-green-300",
                                         )}>
-                                            <span >{individualConcept}</span>
+                                            <span>{individualConcept}</span>
                                         </CommandItem>
                                     )
                                 })
-                               })}
+                            })}
                         </CommandGroup>
 
                     </CommandList>
@@ -118,10 +116,6 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate }: {
                     </div>
                 </Command>
             </div>
-
         </div>
-
-
-
     )
 }

@@ -1,7 +1,6 @@
 version: '3'
 
-services:
-  # New Backend Rust service
+services: # New Backend Rust service
   oort-ml:
     build:
       context: ./ml
@@ -9,13 +8,15 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./oort-ml-rust:/app/src  # For development only
+      - ./ml/src:/usr/src/app/src # Map source code
+      - ./ml/Cargo.toml:/usr/src/app/Cargo.toml
+      - ./ml/Cargo.lock:/usr/src/app/Cargo.lock
+      - rust_target_cache:/usr/src/app/target # Cache compiled artifacts
     environment:
       - RUST_LOG=info
       - OLLAMA_URL=http://ollama:11434
     depends_on:
       - ollama
-
 
   # Frontend React service
   oort-fe-app:
@@ -40,7 +41,15 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-    command: "serve & ollama pull phi3.5"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: "serve"
 
 volumes:
   ollama_data:
+  rust_target_cache: # Persist target directory between restarts

@@ -35,7 +35,7 @@ impl EmbeddingModel {
         Self {
             base_url: base_url.to_string(),
             client,
-            model_name: "mxbai-embed-large".to_string(),
+            model_name: "snowflake-arctic-embed2".to_string(),
         }
     }
     
