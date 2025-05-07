@@ -32,10 +32,10 @@ export function Planet({ texturePath, position, onClick, concepts, isSelected })
             {isSelected && (
                 <mesh ref={auraRef} position={[0, 0, 0]}>
                     <sphereGeometry args={[1.2 * scale[0], 32, 32]} />
-                    <meshBasicMaterial
-                        color={0x00ffff}
-                        transparent={true}
-                        opacity={0.15}
+                    <meshStandardMaterial
+                        map={texture}
+                        roughness={1}
+                        emissive={new THREE.Color(0x000000)}
                     />
                 </mesh>
             )}
@@ -55,17 +55,17 @@ export function Planet({ texturePath, position, onClick, concepts, isSelected })
 
             <Html
                 position={[0, 1.5, 0]}
-                
+
                 onClick={onClick}
                 className="text-2xl select-none transition-colors ease-in-out overflow-x-clip">
                 <div>
-                    <div className={`bg-black bg-opacity-80 border border-green-700 p-4 ${isSelected ? "opacity-100" : "opacity-30"}`}>
+                    <div className={`bg-black bg-opacity-80 border border-green-700 p-4 ${isSelected ? "opacity-70" : "opacity-20"}`}>
                         {concepts.map((concept) => (
-                            <ul className="space-y-2 flex justify-center items-center" key={concept}>
-                                <li className={`list-none ${isSelected ? 'text-white' : 'text-green-400 bg-transparent'} leading-relaxed`} onClick={onClick}>
+                            <ol className="space-y-2 flex justify-center items-center list-disc pl-2" key={concept}>
+                                <li className={`${isSelected ? 'text-white' : 'text-green-400 bg-transparent  opacity-100'} leading-relaxed`} onClick={onClick}>
                                     {concept}
                                 </li>
-                            </ul>
+                            </ol>
                         ))}
                     </div>
                 </div>

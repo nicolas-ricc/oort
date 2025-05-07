@@ -4,8 +4,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { Menu } from './layout/Menu'
 import { Layout } from './layout/Layout'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import ShootingStarsAnimation from './cloud/ShootingStars'
-
+import * as THREE from 'three'
 
 export type ConceptCluster = {
   concepts: string[];
@@ -21,6 +20,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false)
 
   useMemo(() => {
+    console.log(simulationData)
     console.log(active)
   }, [active])
 

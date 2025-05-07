@@ -36,7 +36,7 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadin
                     "Access-Control-Allow-Origin": "*",
                 },
                 body: JSON.stringify({ text: reader.result }),
-            }).then(async(res) => res.json())
+            }).then(async(res) => res.json()).catch(err => console.error(err))
             const vectors = res.data
             return vectors
         },

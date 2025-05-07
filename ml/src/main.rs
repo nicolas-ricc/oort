@@ -122,6 +122,18 @@ async fn upload_file(
     Ok(HttpResponse::Ok().json(response))
 }
 
+
+async fn preload_models(concepts_model: &ConceptsModel, embedding_model: &EmbeddingModel) {
+info!("Preloading models...");
+    if let Err(e) = concepts_model.generate_concepts("Preloading...").await {
+        info!("Error preloading concepts model: {:?}", e);
+    }
+    if let Err(e) = embedding_model.get_contextual_embeddings("Preloading...").await {
+        info!("Error preloading embedding model: {:?}", e);
+    }
+    info!("Models preloaded successfully");
+}
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
@@ -138,6 +150,9 @@ async fn main() -> std::io::Result<()> {
     let concepts_model = Arc::new(ConceptsModel::new(&ollama_base_url));
     let embedding_model = Arc::new(EmbeddingModel::new(&ollama_base_url));
     
+    // Preload models
+    preload_models(&concepts_model, &embedding_model).await;
+
     // Application state
     let app_state = web::Data::new(AppState {
         concepts_model,
