@@ -2,7 +2,6 @@ use crate::error::ApiError;
 use log::{debug, info};
 use regex::Regex;
 use reqwest::Client;
-use rust_stemmers::{Algorithm, Stemmer};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -57,11 +56,6 @@ struct OllamaOptions {
 }
 
 #[derive(Debug, Deserialize)]
-
-struct ResponseContent {
-    concepts: Vec<String>,
-}
-#[derive(Debug, Deserialize)]
 struct OllamaResponse {
     response: String,
 }
@@ -69,12 +63,11 @@ pub struct ConceptsModel {
     base_url: String,
     client: Client,
     model: String,
-    stemmer: Stemmer,
 }
 
 impl ConceptsModel {
     pub fn new(base_url: &str) -> Self {
-        let client = Client::builder()
+        let client: Client = Client::builder()
             .timeout(Duration::from_secs(60))
             .build()
             .expect("Failed to create HTTP client");
@@ -83,20 +76,16 @@ impl ConceptsModel {
             base_url: base_url.to_string(),
             client,
             model: "phi3.5".to_string(),
-            stemmer: Stemmer::create(Algorithm::English),
         }
     }
 
     pub fn clean_text(&self, text: &str) -> String {
-        // Clean punctuation except apostrophes
-        let re_punct = Regex::new(r"[^\w\s']").unwrap();
+        let re_punct: Regex = Regex::new(r"[^\w\s']").unwrap();
         let text = re_punct.replace_all(text, " ");
 
-        // Remove apostrophes if not part of contractions
         let re_apos = Regex::new(r"\s'|'\s").unwrap();
         let text = re_apos.replace_all(&text, " ");
 
-        // Remove multiple spaces
         let re_spaces = Regex::new(r"\s+").unwrap();
         let text = re_spaces.replace_all(&text, " ");
 
@@ -106,10 +95,8 @@ impl ConceptsModel {
     pub fn lemmatize_concept(&self, concept: &str) -> String {
         let concept = self.clean_text(concept);
 
-        // Split into words and lemmatize
         let words: Vec<&str> = concept.split_whitespace().collect();
 
-        // Simple lemmatization using stemmer
         let lemmatized_words: Vec<String> = words
             .iter()
             .map(|word| word.to_string())
@@ -131,7 +118,6 @@ impl ConceptsModel {
         - Newlines
         - Colons or semicolons"#;
 
-        // Take only the first 500 characters to match Python implementation
         let truncated_text = if text.len() > 500 {
             format!("{}...", &text[..500])
         } else {
@@ -161,11 +147,10 @@ impl ConceptsModel {
             stream: false,
         };
 
-        // Build the URL for the Ollama generate endpoint
         let url = format!("{}/api/generate", self.base_url);
         debug!("Sending request to: {}", url);
         info!("Request body: {:?}", request);
-        // Make the request to Ollama
+
         let response = self
             .client
             .post(url)
@@ -177,38 +162,33 @@ impl ConceptsModel {
                 ApiError::RequestError(e)
             })?;
 
-        let body = response.text().await.map_err(|e| {
+        let body: String = response.text().await.map_err(|e| {
             info!("Error extracting response text: {}", e);
             ApiError::RequestError(e)
         })?;
 
         info!("Raw response: {}", body);
 
-        // After logging, parse the JSON from the text
         let ollama_response: OllamaResponse = serde_json::from_str(&body).map_err(|e| {
             info!("Error parsing response JSON: {}", e);
             ApiError::InternalError(format!("JSON parse error: {}", e))
         })?;
 
-        // Define a struct to parse the nested JSON in the response field
         #[derive(Debug, Deserialize)]
         struct ConceptsResponse {
             concepts: Vec<String>,
         }
 
-        // Parse the nested JSON
         let concepts_response: ConceptsResponse = serde_json::from_str(&ollama_response.response)
             .map_err(|e| {
             info!("Error parsing nested JSON: {}", e);
             ApiError::InternalError(format!("Failed to parse concepts JSON: {}", e))
         })?;
 
-        // Process and lemmatize concepts
-        let mut concepts = Vec::new();
+        let mut concepts: Vec<Concept> = Vec::new();
         for concept in concepts_response.concepts {
             let concept = concept.trim();
             if !concept.is_empty() && concept.split_whitespace().count() <= 3 {
-                // Lemmatize the concept
                 let lemmatized = self.lemmatize_concept(&concept);
                 concepts.push(Concept {
                     concept: lemmatized,

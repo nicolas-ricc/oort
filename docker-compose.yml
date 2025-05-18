@@ -1,6 +1,23 @@
 version: '3'
 
 services: # New Backend Rust service
+  oort-db:
+    build:
+      context: ./db
+      dockerfile: Dockerfile
+    ports:
+      - "9042:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=oort_cluster
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   oort-ml:
     build:
       context: ./ml
@@ -23,6 +40,7 @@ services: # New Backend Rust service
       - OLLAMA_URL=http://ollama:11434
     depends_on:
       - ollama
+      - oort-db
 
   # Frontend React service
   oort-fe-app:
@@ -58,4 +76,5 @@ services: # New Backend Rust service
 
 volumes:
   ollama_data:
-  rust_target_cache: # Persist target directory between restarts
+  rust_target_cache:
+  cassandra_data:

@@ -3,7 +3,6 @@ use crate::embeddings::Embedding;
 use crate::error::ApiError;
 use log::info;
 use ndarray::{Array2, ArrayView1};
-use ndarray_stats::QuantileExt;
 use ndarray_linalg::Norm;
 use linfa::prelude::*;
 use linfa_clustering::KMeans;
@@ -48,8 +47,8 @@ pub fn merge_similar_concepts(
         )));
     }
     
-    let mut merged_groups = Vec::new();
-    let mut processed = HashSet::new();
+    let mut merged_groups: Vec<(Vec<String>, ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<[usize; 1]>>)> = Vec::new();
+    let mut processed: HashSet<usize> = HashSet::new();
     
     for i in 0..concepts.len() {
         if processed.contains(&i) {
@@ -57,7 +56,7 @@ pub fn merge_similar_concepts(
         }
         
         // Find similar concepts
-        let mut similar_indices = vec![i];
+        let mut similar_indices: Vec<usize> = vec![i];
         for j in (i + 1)..concepts.len() {
             if !processed.contains(&j) {
                 let similarity = cosine_similarity(

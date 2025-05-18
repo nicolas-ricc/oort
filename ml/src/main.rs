@@ -73,7 +73,7 @@ async fn upload_file(
     payload: web::Payload,
     state: web::Data<AppState>,
 ) -> Result<impl Responder, ApiError> {
-    use futures::{StreamExt, TryStreamExt};
+    use futures::StreamExt;
     use bytes::BytesMut;
     
     // Read the file content
