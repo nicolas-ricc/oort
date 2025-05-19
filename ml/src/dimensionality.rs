@@ -1,12 +1,12 @@
 use crate::concepts::Concept;
 use crate::embeddings::Embedding;
 use crate::error::ApiError;
-use log::info;
-use ndarray::{Array2, ArrayView1};
-use ndarray_linalg::Norm;
 use linfa::prelude::*;
 use linfa_clustering::KMeans;
 use linfa_reduction::Pca;
+use log::info;
+use ndarray::{Array2, ArrayView1};
+use ndarray_linalg::Norm;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -47,7 +47,7 @@ pub fn merge_similar_concepts(
         )));
     }
     
-    let mut merged_groups: Vec<(Vec<String>, ndarray::ArrayBase<ndarray::OwnedRepr<f32>, ndarray::Dim<[usize; 1]>>)> = Vec::new();
+    let mut merged_groups: Vec<(Vec<String>, Embedding)> = Vec::new();
     let mut processed: HashSet<usize> = HashSet::new();
     
     for i in 0..concepts.len() {
@@ -111,12 +111,12 @@ pub fn cluster_embeddings(
     let mut data = Array2::zeros((embeddings.len(), n_features));
     
     for (i, embedding) in embeddings.iter().enumerate() {
-        // Convert f32 to f64 for each element
         for (j, &val) in embedding.iter().enumerate() {
             data[[i, j]] = val as f64;
         }
     }
     
+    // Create the dataset
     let dataset = Dataset::from(data);
     
     // Apply K-means clustering
@@ -124,12 +124,12 @@ pub fn cluster_embeddings(
         .max_n_iterations(100)
         .tolerance(1e-5)
         .fit(&dataset)
-        .map_err(|e| {
-            ApiError::DimensionalityError(format!("K-Means error: {}", e))
-        })?;
+        .map_err(|e| ApiError::DimensionalityError(format!("K-Means error: {}", e)))?;
     
     // Get cluster assignments
     let predictions = kmeans.predict(dataset);
+    
+    // Convert to Vec<usize>
     Ok(predictions.targets.iter().map(|&x| x as usize).collect())
 }
 
@@ -144,7 +144,6 @@ pub fn reduce_to_3d(embeddings: &[Embedding]) -> Result<Vec<[f32; 3]>, ApiError>
     let mut data = Array2::zeros((embeddings.len(), n_features));
     
     for (i, embedding) in embeddings.iter().enumerate() {
-        // Convert f32 to f64 for each element
         for (j, &val) in embedding.iter().enumerate() {
             data[[i, j]] = val as f64;
         }
@@ -156,9 +155,7 @@ pub fn reduce_to_3d(embeddings: &[Embedding]) -> Result<Vec<[f32; 3]>, ApiError>
     let n_components = 3;
     let pca = Pca::params(n_components)
         .fit(&dataset)
-        .map_err(|e| {
-            ApiError::DimensionalityError(format!("PCA error: {}", e))
-        })?;
+        .map_err(|e| ApiError::DimensionalityError(format!("PCA error: {}", e)))?;
     
     let transformed = pca.transform(dataset);
     
@@ -167,9 +164,7 @@ pub fn reduce_to_3d(embeddings: &[Embedding]) -> Result<Vec<[f32; 3]>, ApiError>
         .records
         .rows()
         .into_iter()
-        .map(|row| {
-            [row[0] as f32, row[1] as f32, row[2] as f32]
-        })
+        .map(|row| [row[0] as f32, row[1] as f32, row[2] as f32])
         .collect();
     
     Ok(reduced)
