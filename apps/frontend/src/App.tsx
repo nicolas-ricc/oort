@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState } from 'react'
 import { Menu } from './layout/Menu'
 import { Layout } from './layout/Layout'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import * as THREE from 'three'
 
 export type ConceptCluster = {
   concepts: string[];
