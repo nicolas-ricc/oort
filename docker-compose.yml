@@ -9,6 +9,8 @@ services: # New Backend Rust service
       - "9042:9042"
     environment:
       - CASSANDRA_CLUSTER_NAME=oort_cluster
+      - HEAP_NEWSIZE=128M
+      - MAX_HEAP_SIZE=512M
     volumes:
       - cassandra_data:/var/lib/cassandra
     healthcheck:
@@ -16,7 +18,16 @@ services: # New Backend Rust service
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
+
+  cassandra-init:
+    image: cassandra:latest
+    depends_on:
+      oort-db:
+        condition: service_healthy
+    command: cqlsh oort-db -f /init/data.cql
+    volumes:
+      - ./db/data.cql:/init/data.cql
 
   oort-ml:
     build:
@@ -39,8 +50,8 @@ services: # New Backend Rust service
       - RUST_LOG=info
       - OLLAMA_URL=http://ollama:11434
     depends_on:
-      - ollama
-      - oort-db
+      oort-db:
+        condition: service_healthy
 
   # Frontend React service
   oort-fe-app:
@@ -48,7 +59,7 @@ services: # New Backend Rust service
       context: ./apps/frontend
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - "5173:5173"
     volumes:
       - ./apps/frontend:/app
       - /app/node_modules
@@ -73,8 +84,27 @@ services: # New Backend Rust service
               count: 1
               capabilities: [gpu]
     command: "serve"
+    
+  grafana:
+    image: grafana/grafana-oss
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      - TERM=linux
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-polystat-panel,hadesarchitect-cassandra-datasource
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin 
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_BASIC_ENABLED=false
+    ports:
+      - '3000:3000'
+    volumes:
+      - 'grafana_storage:/var/lib/grafana'
+    depends_on:
+      - oort-db
+
 
 volumes:
   ollama_data:
   rust_target_cache:
   cassandra_data:
+  grafana_storage: {}

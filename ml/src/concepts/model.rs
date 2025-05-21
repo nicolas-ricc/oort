@@ -42,12 +42,12 @@ struct Properties {
 #[derive(Debug, Serialize, Deserialize)]
 struct ConceptsSchema {
     r#type: String,
+    items: Items, // Add this field
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Items {
-    #[serde(rename = "type")]
-    item_type: String,
+    r#type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -97,10 +97,7 @@ impl ConceptsModel {
 
         let words: Vec<&str> = concept.split_whitespace().collect();
 
-        let lemmatized_words: Vec<String> = words
-            .iter()
-            .map(|word| word.to_string())
-            .collect();
+        let lemmatized_words: Vec<String> = words.iter().map(|word| word.to_string()).collect();
 
         lemmatized_words.join(" ")
     }
@@ -133,9 +130,12 @@ impl ConceptsModel {
             properties: Properties {
                 concepts: ConceptsSchema {
                     r#type: "array".to_string(),
+                    items: Items {
+                        r#type: "string".to_string(),
+                    },
                 },
             },
-            required: ["concepts".to_string()].to_vec(),
+            required: vec!["concepts".to_string()],
         };
         info!("Requesting concepts using model: {}", self.model);
         let request = OllamaRequest {

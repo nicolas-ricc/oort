@@ -23,6 +23,6 @@ COPY . .
 
 # Expose the port
 EXPOSE 8000
-
+ENV DB_NODES="oort-db:9042"
 # Command to run with hot-reloading
 CMD ["cargo", "watch", "-x", "run", "-w", "src"]

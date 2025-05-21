@@ -39,7 +39,6 @@ async fn process_text(
 ) -> Result<impl Responder, ApiError> {
     info!("Processing text of length: {}", data.text.len());
 
-    // Extract concepts from the new text
     let new_concepts = state.concepts_model.generate_concepts(&data.text).await?;
 
     if new_concepts.is_empty() {
@@ -49,23 +48,19 @@ async fn process_text(
     let mut all_concepts = new_concepts.clone();
     let mut existing_embeddings = Vec::new();
 
-    // If user_id is provided, get existing concepts from database
     if let Some(user_id) = &data.user_id {
         info!("Loading existing concepts for user: {}", user_id);
 
         let user_concepts = state.db_client.get_user_concepts(user_id).await?;
 
-        // Combine existing concepts with new ones
         for (concept, embedding) in user_concepts {
             all_concepts.push(concept);
             existing_embeddings.push(embedding);
         }
     }
 
-    // Get concept strings for embeddings
     let concept_strings: Vec<String> = all_concepts.iter().map(|c| c.concept.clone()).collect();
 
-    // Generate embeddings for new concepts only
     let new_concept_strings: Vec<String> = new_concepts.iter().map(|c| c.concept.clone()).collect();
 
     let new_embeddings = state
@@ -77,14 +72,12 @@ async fn process_text(
         return Err(ApiError::EmbeddingGenerationError);
     }
 
-    // Save new concepts to database asynchronously
     if let Some(user_id) = &data.user_id {
         let db_client = Arc::clone(&state.db_client);
         let user_id = user_id.clone();
         let new_concepts_clone = new_concepts.clone();
         let new_embeddings_clone = new_embeddings.clone();
 
-        // Spawn a task to save concepts without waiting for completion
         tokio::spawn(async move {
             for (concept, embedding) in new_concepts_clone.iter().zip(new_embeddings_clone.iter()) {
                 if let Err(e) = db_client.save_concept(&user_id, concept, embedding).await {
@@ -94,11 +87,9 @@ async fn process_text(
         });
     }
 
-    // Combine new embeddings with existing ones
     let mut all_embeddings = new_embeddings;
     all_embeddings.extend(existing_embeddings);
 
-    // Cluster concepts with embeddings
     let clustered_results = dimensionality::cluster_concepts(&all_concepts, &all_embeddings)?;
 
     let response = ApiResponse {
