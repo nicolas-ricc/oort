@@ -1,5 +1,5 @@
-use crate::concepts::Concept;
-use crate::embeddings::Embedding;
+use crate::models::concepts::Concept;
+use crate::models::embeddings::Embedding;
 use crate::error::ApiError;
 use cdrs_tokio::cluster::session::SessionBuilder;
 use cdrs_tokio::cluster::session::{Session, TcpSessionBuilder};

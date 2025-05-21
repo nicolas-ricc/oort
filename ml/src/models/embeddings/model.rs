@@ -100,35 +100,4 @@ impl EmbeddingModel {
         Ok(embedding)
     }
 
-    /*     pub fn get_similarity(&self, embedding1: ArrayView1<f32>, embedding2: ArrayView1<f32>) -> f32 {
-        // Use BLAS-accelerated operations
-        let norm1 = embedding1.norm_l2();
-        let norm2 = embedding2.norm_l2();
-
-        if norm1 == 0.0 || norm2 == 0.0 {
-            return 0.0;
-        }
-
-        // Calculate cosine similarity using BLAS dot product
-        embedding1.dot(&embedding2) / (norm1 * norm2)
-    }
-
-    pub fn find_most_similar(
-        &self,
-        query_embedding: ArrayView1<f32>,
-        comparison_embeddings: &[Embedding],
-        top_k: usize,
-    ) -> Vec<(usize, f32)> {
-        let mut similarities = Vec::with_capacity(comparison_embeddings.len());
-
-        for (i, emb) in comparison_embeddings.iter().enumerate() {
-            let similarity = self.get_similarity(query_embedding, emb.view());
-            similarities.push((i, similarity));
-        }
-
-        similarities.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        similarities.truncate(top_k);
-        similarities
-    }*/
 }

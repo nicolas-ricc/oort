@@ -1,5 +1,5 @@
-use crate::concepts::Concept;
-use crate::embeddings::Embedding;
+use crate::models::concepts::Concept;
+use crate::models::embeddings::Embedding;
 use crate::error::ApiError;
 use linfa::prelude::*;
 use linfa_clustering::KMeans;
