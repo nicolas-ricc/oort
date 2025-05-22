@@ -35,7 +35,7 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadin
                     "Accept-Cross-Origin": "*",
                     "Access-Control-Allow-Origin": "*",
                 },
-                body: JSON.stringify({ text: reader.result }),
+                body: JSON.stringify({ user_id: "default", text: reader.result }),
             }).then(async(res) => res.json()).catch(err => console.error(err))
             const vectors = res.data
             return vectors

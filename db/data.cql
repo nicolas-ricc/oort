@@ -5,17 +5,17 @@ CREATE KEYSPACE IF NOT EXISTS store WITH REPLICATION =
 };
 
 -- User concepts table
-CREATE TABLE IF NOT EXISTS user_concepts (
+CREATE TABLE IF NOT EXISTS store.user_concepts (
     user_id UUID,
     concept_id UUID,
     concept_text TEXT,
-    embedding_vector LIST<FLOAT>,
+    embedding_vector LIST<DOUBLE>, 
     created_at TIMESTAMP,
     PRIMARY KEY (user_id, concept_id)
 );
 
 -- Tracking concept sources
-CREATE TABLE IF NOT EXISTS concept_sources (
+CREATE TABLE IF NOT EXISTS store.concept_sources (
     concept_id UUID,
     user_id UUID,
     source_text TEXT,
