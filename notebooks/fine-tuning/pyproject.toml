@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "fine-tuning"
+version = "0.1.0"
+description = "Notebook for fine tuning a model and use it in Oort app"
+authors = ["nicolas-ricc <nicolas.riccomini@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+transformers = "4.46.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -12,14 +12,16 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadin
     onSimulationUpdate: (data: any) => void,
     setLoadingState: (loading: boolean) => void
 }) => {
+    // Generate a consistent UUID for the default user
+    const defaultUserId = "550e8400-e29b-41d4-a716-446655440000";
+
     const { mutate: uploadFile, isPending } = useMutation({
-        mutationFn: async (event: ChangeEvent) => {
-            //@ts-ignore
-            const [file] = event.target.files
+        mutationFn: async (event: ChangeEvent<HTMLInputElement>) => {
+            const [file] = event.target.files || [];
             if (!file) return;
             const reader = new FileReader();
             const handleFileUpload = async (file: File, reader: FileReader) => {
-                return new Promise((resolve, reject) => {
+                return new Promise((resolve) => {
                     reader.onload = async (e) => {
                         const text = e.target?.result as string;
                         resolve(text)
@@ -35,13 +37,12 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadin
                     "Accept-Cross-Origin": "*",
                     "Access-Control-Allow-Origin": "*",
                 },
-                body: JSON.stringify({ user_id: "default", text: reader.result }),
-            }).then(async(res) => res.json()).catch(err => console.error(err))
+                body: JSON.stringify({ user_id: defaultUserId, text: reader.result, filename: file.name }),
+            }).then(async (res) => res.json()).catch(err => console.error(err))
             const vectors = res.data
             return vectors
         },
         onMutate: () => {
-            // Set the global loading state to true
             setLoadingState(true)
         },
         onSuccess: (data) => {
@@ -52,25 +53,28 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadin
             alert('Error processing file. Please try again.');
         },
         onSettled: () => {
-            // Set the global loading state to false when done
             setLoadingState(false)
         }
     })
 
-    return (
-        <div className="[>*]:text-[32px] bg-terminal-bg border-2 border-terminal-border shadow-lg overflow-hidden relative h-full mx-auto">
-            <div className="relative h-full">
+    // Scale factor must match Scene.tsx
+    const SCENE_SCALE = 2;
 
+    return (
+        <div className="[>*]:text-[32px] bg-terminal-bg bx-2 by-2 border-terminal-border shadow-lg overflow-hidden relative h-full mx-auto">
+            <div className="relative h-full">
                 <div className="absolute inset-0 pointer-events-none z-10 bg-[repeating-linear-gradient(0deg,rgba(0,0,0,0.15),rgba(0,0,0,0.15)_1px,transparent_1px,transparent_2px)]"></div>
                 <div className="absolute inset-0 pointer-events-none z-20 bg-[radial-gradient(ellipse_at_center,transparent_0%,rgba(0,0,0,0.2)_90%,rgba(0,0,0,0.4)_100%)]"></div>
 
-                <Command className="rounded-none border-none bg-transparent">
+                <Command className="rounded-none border-none bg-transparent h-full flex flex-col">
                     <div className="border-y border-terminal-border px-3 py-1 bg-terminal-bg flex justify-between items-center">
                         <div className="border-none outline-none text-terminal-text bg-transparent placeholder-terminal-muted caret-terminal-text text-[16px] w-lg">
-                        <CommandInput
-                            placeholder="What are you looking for..." />
+                            <CommandInput placeholder="Search concepts..." />
                         </div>
-                        <label htmlFor="file-upload" className={`cursor-pointer flex items-center justify-center w-10 h-10 rounded-md transition-colors ${isPending ? 'text-gray-500' : 'text-terminal-text hover:text-green-300 hover:bg-zinc-800'}`}>
+                        <label
+                            htmlFor="file-upload"
+                            className={`cursor-pointer flex items-center justify-center w-10 h-10 rounded-md transition-colors ${isPending ? 'text-gray-500' : 'text-terminal-text hover:text-green-300 hover:bg-zinc-800'}`}
+                        >
                             <Upload size={20} />
                             <input
                                 id="file-upload"
@@ -83,34 +87,41 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadin
                         </label>
                     </div>
 
-                    <CommandList className="max-h-80 overflow-y-auto scrollbar scrollbar-w-3 scrollbar-thumb-terminal-border scrollbar-track-zinc-800">
+                    <CommandList className="flex-1 overflow-y-auto scrollbar scrollbar-w-3 scrollbar-thumb-terminal-border scrollbar-track-zinc-800">
                         <CommandEmpty className="px-4 py-8 text-center text-terminal-muted">No results found.</CommandEmpty>
                         <CommandGroup className="bg-terminal-bg text-terminal-text">
-
                             {concepts.map((concept: ConceptCluster) => {
-                                return concept.concepts.map((individualConcept) => {
-                                    return (
-                                        <CommandItem onSelect={() => onSelect(individualConcept)} key={individualConcept} className={cn(
+                                const safeEmbedding = concept.reduced_embedding.map(p => {
+                                    let val = typeof p === 'string' ? parseFloat(p) : Number(p);
+                                    return isNaN(val) ? 0 : val * SCENE_SCALE;
+                                });
+                                const conceptKey = safeEmbedding.map(String).join("-");
+
+                                return concept.concepts.map((individualConcept) => (
+                                    <CommandItem
+                                        onSelect={() => onSelect(individualConcept)}
+                                        key={individualConcept}
+                                        className={cn(
                                             "px-4 py-3 cursor-pointer transition-colors text-[32px]",
-                                            active === concept.reduced_embedding.join("")
+                                            active === conceptKey
                                                 ? "bg-zinc-800 "
                                                 : "text-terminal-text hover:bg-zinc-800 hover:text-green-300",
-                                        )}>
-                                            <span>{individualConcept}</span>
-                                        </CommandItem>
-                                    )
-                                })
+                                        )}
+                                    >
+                                        <span>{individualConcept}</span>
+                                    </CommandItem>
+                                ))
                             })}
                         </CommandGroup>
-
                     </CommandList>
+
                     <div className="bg-zinc-800 border-t border-terminal-border px-4 py-2 text-xs text-terminal-text flex justify-between items-center">
                         <div className="flex items-center">
                             <span className="inline-block w-2 h-2 bg-terminal-text mr-2 animate-terminal-blink"></span>
                             OORT TERMINAL v1.0.0
                         </div>
                         <div className="flex gap-4">
-                            <span>↑↓: NAVIGATE</span>
+                            <span>ARROWS: NAVIGATE</span>
                             <span>ENTER: SELECT</span>
                         </div>
                     </div>

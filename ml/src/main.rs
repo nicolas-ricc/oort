@@ -9,7 +9,7 @@ mod data;
 mod dimensionality;
 mod error;
 
-use crate::controllers::text_processing::{process_text, upload_file, AppState};
+use crate::controllers::text_processing::{process_text, get_texts_by_concept, AppState};
 use crate::models::concepts::ConceptsModel;
 use crate::models::embeddings::EmbeddingModel;
 use crate::data::client::DatabaseClient;
@@ -72,7 +72,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(cors)
             .app_data(app_state.clone())
             .route("/api/vectorize", web::post().to(process_text))
-            .route("/api/upload", web::post().to(upload_file))
+            .route("/api/texts-by-concept", web::get().to(get_texts_by_concept))
     })
     .bind((host, port))?
     .run()

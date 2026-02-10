@@ -8,10 +8,10 @@ use cdrs_tokio::load_balancing::RoundRobinLoadBalancingStrategy;
 use cdrs_tokio::query_values;
 use cdrs_tokio::transport::TransportTcp;
 use cdrs_tokio::types::IntoRustByName;
-use chrono::Utc;
-use futures::future::join_all;
+use chrono::{DateTime, Utc};
 use log::{error, info};
 use ndarray::{Array1, ArrayBase, Dim, OwnedRepr};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 type CurrentSession = Session<
@@ -19,6 +19,17 @@ type CurrentSession = Session<
     TcpConnectionManager,
     RoundRobinLoadBalancingStrategy<TransportTcp, TcpConnectionManager>,
 >;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TextReference {
+    pub text_id: Uuid,
+    pub user_id: Uuid,
+    pub filename: String,
+    pub url: String,
+    pub concepts: Vec<String>,
+    pub upload_timestamp: DateTime<Utc>,
+    pub file_size: Option<i32>,
+}
 
 pub struct DatabaseClient {
     session: CurrentSession,
@@ -63,11 +74,15 @@ impl DatabaseClient {
 
         let mut results = Vec::new();
 
-        for row in rows {
+        info!("Processing {} rows from database", rows.len());
+
+        for (row_index, row) in rows.iter().enumerate() {
             // Extract concept text (works with get_r_by_name)
             let concept_text: String = row.get_r_by_name("concept_text").map_err(|e| {
-                ApiError::InternalError(format!("Concept text extraction error: {}", e))
+                ApiError::InternalError(format!("Concept text extraction error for row {}: {}", row_index, e))
             })?;
+
+            info!("Processing concept {} (row {}): '{}'", row_index, row_index, concept_text);
 
             // For the embedding vector, we need to use a different strategy
             // Let's try to deserialize it manually using the serde functionality
@@ -79,10 +94,17 @@ impl DatabaseClient {
             let embedding_vec: Vec<f32> = match result {
                 Ok(string_vec) => {
                     // Parse as comma-separated values
-                    string_vec
+                    let parsed_vec: Vec<f32> = string_vec
                         .split(',')
                         .filter_map(|s| s.trim().parse::<f32>().ok())
-                        .collect()
+                        .collect();
+                    
+                    // Check if parsing resulted in empty vector
+                    if parsed_vec.is_empty() {
+                        log::error!("Embedding parsing resulted in empty vector for concept '{}', skipping", concept_text);
+                        continue;
+                    }
+                    parsed_vec
                 }
                 Err(_) => {
                     // If string doesn't work, try to parse it as a JSON array
@@ -95,9 +117,6 @@ impl DatabaseClient {
                             })?
                         }
                         Err(_) => {
-                            // Last resort - let's try an alternative approach
-                            // Query the column separately with a different approach
-                            let single_query = "SELECT embedding_vector FROM store.user_concepts WHERE user_id = ? AND concept_id = ?";
                             let concept_id: Uuid =
                                 row.get_r_by_name("concept_id").map_err(|e| {
                                     ApiError::InternalError(format!(
@@ -106,18 +125,11 @@ impl DatabaseClient {
                                     ))
                                 })?;
 
-                            // Re-query to get the vector in a raw format
-                            let raw_result = self
-                                .session
-                                .query_with_values(single_query, query_values!(uuid, concept_id))
-                                .await
-                                .map_err(|e| {
-                                    ApiError::InternalError(format!("Second query error: {}", e))
-                                })?;
-
-                            // Process to extract the vector based on your actual storage format
-                            // This is a placeholder - you'll need to adapt this to how your data is actually stored
-                            Vec::new()
+                            log::error!("Corrupted embedding data for concept '{}' (ID: {}), skipping this concept", 
+                                       concept_text, concept_id);
+                            
+                            // Skip this concept rather than failing the entire request
+                            continue;
                         }
                     }
                 }
@@ -141,6 +153,14 @@ impl DatabaseClient {
         concept: &Concept,
         embedding: &Embedding,
     ) -> Result<(), ApiError> {
+        // Validate embedding is not empty
+        if embedding.is_empty() {
+            return Err(ApiError::InternalError(format!(
+                "Cannot save concept '{}' with zero-dimensional embedding", 
+                concept.concept
+            )));
+        }
+
         let concept_id = Uuid::new_v4();
         let user_uuid = Uuid::parse_str(user_id)
             .map_err(|e| ApiError::InternalError(format!("Invalid UUID: {}", e)))?;
@@ -190,36 +210,124 @@ impl DatabaseClient {
         Ok(())
     }
 
-    pub async fn save_concepts_batch(
+    pub async fn save_text_reference(
         &self,
         user_id: &str,
-        concepts: &[Concept],
-        embeddings: &[Embedding],
-    ) -> Result<(), ApiError> {
-        if concepts.len() != embeddings.len() {
-            return Err(ApiError::InternalError(
-                "Concept and embedding count mismatch".to_string(),
-            ));
+        filename: &str,
+        url: &str,
+        concepts: &[String],
+        file_size: Option<i32>,
+    ) -> Result<Uuid, ApiError> {
+        let text_id = Uuid::new_v4();
+        let user_uuid = Uuid::parse_str(user_id)
+            .map_err(|e| ApiError::InternalError(format!("Invalid UUID: {}", e)))?;
+        let now = Utc::now();
+        
+        let concepts_vec: Vec<String> = concepts.iter().cloned().collect();
+
+        // Insert into text_references table
+        let query = "INSERT INTO store.text_references \
+                    (text_id, user_id, filename, url, concepts, upload_timestamp, file_size) \
+                    VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+        self.session
+            .query_with_values(
+                query,
+                query_values!(
+                    text_id,
+                    user_uuid,
+                    filename,
+                    url,
+                    concepts_vec,
+                    now,
+                    file_size
+                ),
+            )
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Save text reference error: {}", e)))?;
+
+        // Insert into concept_text_mapping table for each concept
+        for concept in concepts {
+            let mapping_query = "INSERT INTO store.concept_text_mapping \
+                               (concept_text, user_id, text_id, filename, url, upload_timestamp) \
+                               VALUES (?, ?, ?, ?, ?, ?)";
+
+            self.session
+                .query_with_values(
+                    mapping_query,
+                    query_values!(
+                        concept.clone(),
+                        user_uuid,
+                        text_id,
+                        filename,
+                        url,
+                        now
+                    ),
+                )
+                .await
+                .map_err(|e| ApiError::InternalError(format!("Save concept mapping error: {}", e)))?;
         }
 
-        let mut futures = Vec::new();
-
-        for (concept, embedding) in concepts.iter().zip(embeddings.iter()) {
-            let future = self.save_concept(user_id, concept, embedding);
-            futures.push(future);
-        }
-
-        // Execute all futures concurrently
-        let results = join_all(futures).await;
-
-        // Check for errors
-        for result in results {
-            if let Err(e) = result {
-                error!("Error saving concept: {}", e);
-                // Continue saving other concepts even if one fails
-            }
-        }
-
-        Ok(())
+        Ok(text_id)
     }
+
+    pub async fn get_texts_by_concept(
+        &self,
+        user_id: &str,
+        concept: &str,
+    ) -> Result<Vec<TextReference>, ApiError> {
+        let user_uuid = Uuid::parse_str(user_id)
+            .map_err(|e| ApiError::InternalError(format!("Invalid UUID: {}", e)))?;
+
+        let query = "SELECT text_id, filename, url, upload_timestamp \
+                    FROM store.concept_text_mapping \
+                    WHERE concept_text = ? AND user_id = ?";
+
+        let rows = self
+            .session
+            .query_with_values(query, query_values!(concept, user_uuid))
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Query error: {}", e)))?
+            .response_body()
+            .map_err(|e| ApiError::InternalError(format!("Response error: {}", e)))?
+            .into_rows()
+            .unwrap_or_default();
+
+        let mut results = Vec::new();
+
+        for row in rows.iter() {
+            let text_id: Uuid = row.get_r_by_name("text_id").map_err(|e| {
+                ApiError::InternalError(format!("Text ID extraction error: {}", e))
+            })?;
+
+            let filename: String = row.get_r_by_name("filename").map_err(|e| {
+                ApiError::InternalError(format!("Filename extraction error: {}", e))
+            })?;
+
+            let url: String = row.get_r_by_name("url").map_err(|e| {
+                ApiError::InternalError(format!("URL extraction error: {}", e))
+            })?;
+
+            let upload_timestamp: DateTime<Utc> = row.get_r_by_name("upload_timestamp").map_err(|e| {
+                ApiError::InternalError(format!("Timestamp extraction error: {}", e))
+            })?;
+
+            // For now, we'll just include the queried concept in the concepts list
+            // In a full implementation, you might want to fetch all concepts for this text
+            let concepts = vec![concept.to_string()];
+
+            results.push(TextReference {
+                text_id,
+                user_id: user_uuid,
+                filename,
+                url,
+                concepts,
+                upload_timestamp,
+                file_size: None, // Not stored in mapping table
+            });
+        }
+
+        Ok(results)
+    }
+
 }

@@ -1,5 +1,3 @@
-version: '3'
-
 services: # New Backend Rust service
   oort-db:
     build:
@@ -49,10 +47,13 @@ services: # New Backend Rust service
     environment:
       - RUST_LOG=info
       - OLLAMA_URL=http://ollama:11434
+      - GITHUB_TOKEN_FILE=/run/secrets/github_token
+      - GITHUB_OWNER=nicolas-ricc
     depends_on:
       oort-db:
         condition: service_healthy
-
+    secrets:
+      - github_token
   # Frontend React service
   oort-fe-app:
     build:
@@ -108,3 +109,7 @@ volumes:
   rust_target_cache:
   cassandra_data:
   grafana_storage: {}
+
+secrets:
+  github_token:
+    file: ./github_token.txt
