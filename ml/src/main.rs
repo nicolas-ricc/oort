@@ -1,5 +1,5 @@
 use actix_cors::Cors;
-use actix_web::{middleware::Logger, web, App, HttpServer};
+use actix_web::{middleware::Logger, web, App, HttpResponse, HttpServer};
 use log::info;
 use std::sync::Arc;
 
@@ -13,6 +13,10 @@ use crate::controllers::text_processing::{process_text, get_texts_by_concept, Ap
 use crate::models::concepts::ConceptsModel;
 use crate::models::embeddings::EmbeddingModel;
 use crate::data::client::DatabaseClient;
+
+async fn health() -> HttpResponse {
+    HttpResponse::Ok().body("ok")
+}
 
 async fn preload_models(concepts_model: &ConceptsModel, embedding_model: &EmbeddingModel) {
     info!("Preloading models...");
@@ -71,6 +75,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .wrap(cors)
             .app_data(app_state.clone())
+            .route("/api/health", web::get().to(health))
             .route("/api/vectorize", web::post().to(process_text))
             .route("/api/texts-by-concept", web::get().to(get_texts_by_concept))
     })

@@ -1,4 +1,4 @@
-import { Suspense, useRef, useState, useCallback } from "react";
+import { Suspense, useRef, useState, useCallback, MutableRefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Scene } from "./Scene";
 import { PerspectiveCamera, Trail } from "@react-three/drei";
@@ -84,6 +84,8 @@ type RenderProps = {
   onToggleTour?: () => void;
   onResetToOverview?: () => void;
   onNavigateToIndex?: (index: number) => void;
+  screenPositionRef?: MutableRefObject<{ x: number; y: number } | null>;
+  onAnimatingChange?: (animating: boolean) => void;
 };
 
 function Render({
@@ -94,18 +96,22 @@ function Render({
   onNavigatePrevious,
   onToggleTour,
   onResetToOverview,
-  onNavigateToIndex
+  onNavigateToIndex,
+  screenPositionRef,
+  onAnimatingChange
 }: RenderProps) {
   const [isAnimating, setIsAnimating] = useState(false);
   const [cameraTarget, setCameraTarget] = useState<{ position: number[]; lookAt: number[] } | null>(null);
 
   const handleAnimationStart = useCallback(() => {
     setIsAnimating(true);
-  }, []);
+    onAnimatingChange?.(true);
+  }, [onAnimatingChange]);
 
   const handleAnimationEnd = useCallback(() => {
     setIsAnimating(false);
-  }, []);
+    onAnimatingChange?.(false);
+  }, [onAnimatingChange]);
 
   const handleCameraTargetChange = useCallback((target: { position: number[]; lookAt: number[] } | null) => {
     setCameraTarget(target);
@@ -165,6 +171,7 @@ function Render({
       onCreated={({ gl }) => {
         gl.setClearColor('#050508');
       }}
+      onPointerMissed={() => setActive("")}
     >
       <PerspectiveCamera
         makeDefault
@@ -195,6 +202,7 @@ function Render({
           onResetToOverview={onResetToOverview}
           onNavigateToIndex={onNavigateToIndex}
           onCameraTargetChange={handleCameraTargetChange}
+          screenPositionRef={screenPositionRef}
         />
       </Suspense>
 

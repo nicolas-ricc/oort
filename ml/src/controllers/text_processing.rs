@@ -185,36 +185,41 @@ pub async fn process_text(
     let mut mind_map = dimensionality::MindMapProcessor::new(None);
     let clustered_results = mind_map.process_concepts(&all_concepts, &all_embeddings)?;
 
-    // Upload to CDN and save text reference
-    let filename = data.filename.clone().unwrap_or_else(|| {
+    // Spawn CDN upload + text reference saving as background task
+    let text_for_cdn = data.text.clone();
+    let filename_for_cdn = data.filename.clone().unwrap_or_else(|| {
         format!("processed_text_{}.txt", Uuid::new_v4())
     });
-    
-    let cdn_url = GitHubCDN::new().upload_text(&data.text, &filename).await?;
-    
-    // Extract all concept strings for saving text reference
+    let user_id_for_cdn = data.user_id.clone();
     let all_concept_strings: Vec<String> = all_concepts.iter().map(|c| c.concept.clone()).collect();
-    
-    // Save text reference with concepts
-    if let Some(user_id) = &data.user_id {
-        // Convert "default" to a proper UUID format
-        let normalized_user_id = if user_id == "default" {
-            "550e8400-e29b-41d4-a716-446655440000".to_string()
-        } else {
-            user_id.clone()
-        };
-        
-        let file_size = data.text.len() as i32;
-        if let Err(e) = state.db_client.save_text_reference(
-            &normalized_user_id,
-            &filename,
-            &cdn_url,
-            &all_concept_strings,
-            Some(file_size),
-        ).await {
-            error!("Failed to save text reference: {:?}", e);
+    let db_client_cdn = Arc::clone(&state.db_client);
+
+    tokio::spawn(async move {
+        match GitHubCDN::new().upload_text(&text_for_cdn, &filename_for_cdn).await {
+            Ok(cdn_url) => {
+                if let Some(user_id) = &user_id_for_cdn {
+                    let normalized_user_id = if user_id == "default" {
+                        "550e8400-e29b-41d4-a716-446655440000".to_string()
+                    } else {
+                        user_id.clone()
+                    };
+                    let file_size = text_for_cdn.len() as i32;
+                    if let Err(e) = db_client_cdn.save_text_reference(
+                        &normalized_user_id,
+                        &filename_for_cdn,
+                        &cdn_url,
+                        &all_concept_strings,
+                        Some(file_size),
+                    ).await {
+                        error!("Failed to save text reference: {:?}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                error!("CDN upload failed (non-fatal): {:?}", e);
+            }
         }
-    }
+    });
 
     let response = ApiResponse {
         success: true,

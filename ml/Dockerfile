@@ -4,7 +4,7 @@ WORKDIR /usr/src/app
 
 # Install build dependencies and cargo-watch
 RUN apt-get update && \
-    apt-get install -y pkg-config libssl-dev libopenblas-dev liblapack-dev g++ build-essential && \
+    apt-get install -y pkg-config libssl-dev libopenblas-dev liblapack-dev g++ build-essential curl && \
     cargo install cargo-watch && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -20,6 +20,10 @@ RUN mkdir -p src && \
 
 # Copy the actual source code
 COPY . .
+
+# Copy healthcheck script
+COPY preload_models.sh /usr/src/app/preload_models.sh
+RUN chmod +x /usr/src/app/preload_models.sh
 
 # Expose the port
 EXPOSE 8000

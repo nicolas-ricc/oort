@@ -1,9 +1,9 @@
 import Render from './cloud/Render'
-import simulation from "./mocks/simulation.json"
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Menu } from './layout/Menu'
 import { Layout } from './layout/Layout'
-import { ConceptPanel } from './layout/ConceptPanel'
+import { FloatingPlanetPanel } from './layout/FloatingPlanetPanel'
+import { EmptyStateModal } from './layout/EmptyStateModal'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useNavigation } from './hooks/useNavigation'
 
@@ -19,18 +19,15 @@ export type ConceptCluster = {
 export type Simulation = ConceptCluster[]
 
 function App() {
-  const [simulationData, setSimulationData] = useState<Simulation>(simulation)
-  const [active, setActive] = useState<string>(() => {
-    if (simulationData[0]?.reduced_embedding) {
-      const safeEmbedding = simulationData[0].reduced_embedding.map(p => {
-        let val = typeof p === 'string' ? parseFloat(p) : Number(p);
-        return isNaN(val) ? 0 : val * SCENE_SCALE;
-      });
-      return safeEmbedding.map(String).join("-");
-    }
-    return "";
-  })
+  const [simulationData, setSimulationData] = useState<Simulation>([])
+  const [active, setActive] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
+  const [isAnimating, setIsAnimating] = useState(false)
+
+  const screenPositionRef = useRef<{ x: number; y: number } | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  const isEmpty = simulationData.length === 0;
 
   // Navigation hook
   const navigation = useNavigation(simulationData, active, setActive);
@@ -89,11 +86,15 @@ function App() {
     setIsLoading(loading)
   }, [])
 
+  const handleAnimatingChange = useCallback((animating: boolean) => {
+    setIsAnimating(animating);
+  }, []);
+
   const client = useMemo(() => new QueryClient(), [])
 
   return (
     <QueryClientProvider client={client}>
-      <Layout>
+      <Layout isEmpty={isEmpty} canvasRef={canvasRef}>
         <Render
           simulation={simulationData}
           activeNode={active}
@@ -103,6 +104,8 @@ function App() {
           onToggleTour={navigation.toggleTour}
           onResetToOverview={navigation.resetToOverview}
           onNavigateToIndex={navigation.navigateToIndex}
+          screenPositionRef={screenPositionRef}
+          onAnimatingChange={handleAnimatingChange}
         />
         <Menu
           concepts={simulationData}
@@ -120,18 +123,26 @@ function App() {
           active={active}
           setLoadingState={setLoadingState}
         />
-        <ConceptPanel
-          selectedCluster={selectedCluster}
-          currentIndex={navigation.currentIndex}
-          totalCount={navigation.totalCount}
-          tourMode={navigation.tourMode}
-          clusterIndex={clusterIndex}
-          onNavigateNext={navigation.navigateToNext}
-          onNavigatePrevious={navigation.navigateToPrevious}
-          onToggleTour={navigation.toggleTour}
-          onNavigateToIndex={navigation.navigateToIndex}
-        />
       </Layout>
+
+      {/* Floating panel - outside Layout, positioned fixed */}
+      {!isEmpty && (
+        <FloatingPlanetPanel
+          selectedCluster={selectedCluster}
+          clusterIndex={clusterIndex}
+          screenPositionRef={screenPositionRef}
+          isAnimating={isAnimating}
+          onClose={() => setActive("")}
+        />
+      )}
+
+      {/* Empty state modal */}
+      {isEmpty && (
+        <EmptyStateModal
+          onSimulationUpdate={handleSimulationUpdate}
+          setLoadingState={setLoadingState}
+        />
+      )}
     </QueryClientProvider>
   )
 }

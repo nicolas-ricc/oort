@@ -85,6 +85,20 @@ services: # New Backend Rust service
               count: 1
               capabilities: [gpu]
     command: "serve"
+
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until ollama list >/dev/null 2>&1; do sleep 2; done
+        ollama pull phi3.5
+        ollama pull snowflake-arctic-embed2
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
     
   grafana:
     image: grafana/grafana-oss

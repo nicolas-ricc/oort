@@ -1,10 +1,11 @@
-import { Fragment, useMemo, useEffect, useCallback } from "react";
+import { Fragment, useMemo, useEffect, useCallback, MutableRefObject } from "react";
 import { Planet } from "./planet/Planet";
 import { textures } from "@/assets/textures";
-import { useThree } from "@react-three/fiber";
+import { useThree, useFrame } from "@react-three/fiber";
 import { AmbientLighting } from "./lighting/AmbientLighting";
 import { ClusterLights } from "./lighting/ClusterLights";
 import { SCENE_SCALE } from "./hooks/useSceneScale";
+import * as THREE from "three";
 
 function safeParseEmbedding(embedding: number[] | string[], scaleFactor = SCENE_SCALE): number[] {
     if (!Array.isArray(embedding)) {
@@ -194,6 +195,7 @@ type SceneProps = {
     onResetToOverview?: () => void;
     onNavigateToIndex?: (index: number) => void;
     onCameraTargetChange?: (target: { position: number[]; lookAt: number[] } | null) => void;
+    screenPositionRef?: MutableRefObject<{ x: number; y: number } | null>;
 };
 
 export function Scene({
@@ -205,9 +207,10 @@ export function Scene({
     onToggleTour,
     onResetToOverview,
     onNavigateToIndex,
-    onCameraTargetChange
+    onCameraTargetChange,
+    screenPositionRef
 }: SceneProps) {
-    const { gl } = useThree();
+    const { gl, camera } = useThree();
 
     // Keyboard event handler
     const handleKeyDown = useCallback((event: KeyboardEvent) => {
@@ -302,6 +305,23 @@ export function Scene({
         });
         return activeNodeData ? safeParseEmbedding(activeNodeData.reduced_embedding, SCENE_SCALE) : null;
     }, [adjustedNodes, activeNode]);
+
+    // Project active node position to screen coordinates
+    useFrame(() => {
+        if (!screenPositionRef) return;
+        if (!activeNodePosition) {
+            screenPositionRef.current = null;
+            return;
+        }
+        const vec = new THREE.Vector3(activeNodePosition[0], activeNodePosition[1], activeNodePosition[2]);
+        vec.project(camera);
+        const halfWidth = gl.domElement.clientWidth / 2;
+        const halfHeight = gl.domElement.clientHeight / 2;
+        screenPositionRef.current = {
+            x: vec.x * halfWidth + halfWidth,
+            y: -(vec.y * halfHeight) + halfHeight,
+        };
+    });
 
     // Calculate camera target and notify parent
     useEffect(() => {
