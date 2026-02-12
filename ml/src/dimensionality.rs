@@ -79,7 +79,7 @@ impl MindMapProcessor {
         // Step 2: Extract merged embeddings for processing
         let merged_embeddings: Vec<Embedding> = merged_groups
             .iter()
-            .map(|(_, embedding)| embedding.clone())
+            .map(|(_, embedding, _)| embedding.clone())
             .collect();
 
         // Step 3: Build similarity matrix
@@ -101,7 +101,7 @@ impl MindMapProcessor {
         &self,
         concepts: &[Concept],
         embeddings: &[Embedding],
-    ) -> Result<Vec<(Vec<String>, Embedding)>, ApiError> {
+    ) -> Result<Vec<(Vec<String>, Embedding, Vec<f32>)>, ApiError> {
         if concepts.is_empty() || embeddings.is_empty() {
             return Err(ApiError::InternalError(
                 "Empty concepts or embeddings".to_string(),
@@ -190,9 +190,14 @@ impl MindMapProcessor {
 
         let mut merged_groups = Vec::new();
         for (_, indices) in groups {
-            let group_concepts = indices
+            let group_concepts: Vec<String> = indices
                 .iter()
                 .map(|&idx| concepts[idx].concept.clone())
+                .collect();
+
+            let group_importances: Vec<f32> = indices
+                .iter()
+                .map(|&idx| concepts[idx].importance)
                 .collect();
 
             // Average embeddings
@@ -205,7 +210,7 @@ impl MindMapProcessor {
                 avg_embedding /= indices.len() as f32;
             }
 
-            merged_groups.push((group_concepts, avg_embedding));
+            merged_groups.push((group_concepts, avg_embedding, group_importances));
         }
 
         info!(
@@ -310,23 +315,23 @@ impl MindMapProcessor {
 
     fn build_concept_groups(
         &mut self,
-        merged_groups: &[(Vec<String>, Embedding)],
+        merged_groups: &[(Vec<String>, Embedding, Vec<f32>)],
         clusters: &[usize],
     ) {
         self.concept_groups.clear();
 
-        info!("Building concept groups: {} merged groups, {} clusters, {} positions", 
+        info!("Building concept groups: {} merged groups, {} clusters, {} positions",
               merged_groups.len(), clusters.len(), self.positions.len());
 
-        for (i, ((concepts, _), &cluster)) in merged_groups.iter().zip(clusters).enumerate() {
+        for (i, ((concepts, _, importances), &cluster)) in merged_groups.iter().zip(clusters).enumerate() {
             if i >= self.positions.len() {
-                log::error!("Position index {} out of bounds for positions array of length {}", 
+                log::error!("Position index {} out of bounds for positions array of length {}",
                            i, self.positions.len());
                 continue;
             }
 
             let connections = self.find_connections(i);
-            let importance_score = self.calculate_importance(i, concepts);
+            let importance_score = self.calculate_importance(i, concepts, importances);
 
             self.concept_groups.push(ConceptGroup {
                 concepts: concepts.clone(),
@@ -354,14 +359,20 @@ impl MindMapProcessor {
             .collect()
     }
 
-    fn calculate_importance(&self, index: usize, concepts: &[String]) -> f32 {
+    fn calculate_importance(&self, index: usize, concepts: &[String], importances: &[f32]) -> f32 {
         let connection_count = self.similarity_matrix[index]
             .iter()
             .filter(|&&sim| sim > 0.0)
             .count() as f32;
         let concept_count = concepts.len() as f32;
 
-        (connection_count * 0.7 + concept_count * 0.3).max(1.0)
+        let avg_nlp_importance = if importances.is_empty() {
+            0.5
+        } else {
+            importances.iter().sum::<f32>() / importances.len() as f32
+        };
+
+        (avg_nlp_importance * 0.4 + connection_count * 0.4 + concept_count * 0.2).max(0.1)
     }
 
     // Physics helper methods

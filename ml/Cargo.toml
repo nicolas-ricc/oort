@@ -30,6 +30,8 @@ cdrs-tokio = "8"
 uuid = { version = "1.17", features = ["v4", "v5", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
+keyword_extraction = { version = "1.5", features = ["rake", "tf_idf"] }
+stop-words = "0.9"
 
 [features]
 default = []

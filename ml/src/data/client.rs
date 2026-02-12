@@ -137,6 +137,7 @@ impl DatabaseClient {
 
             let concept = Concept {
                 concept: concept_text,
+                importance: 0.5,
             };
             let embedding: ArrayBase<OwnedRepr<f32>, Dim<[usize; 1]>> = Array1::from(embedding_vec);
 

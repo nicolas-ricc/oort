@@ -1,4 +1,5 @@
 use crate::error::ApiError;
+use crate::models::concepts::nlp::CandidateKeyword;
 use log::{debug, info};
 use regex::Regex;
 use reqwest::Client;
@@ -8,6 +9,7 @@ use std::time::Duration;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Concept {
     pub concept: String,
+    pub importance: f32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,38 +18,8 @@ struct OllamaRequest {
     prompt: String,
     system: String,
     options: OllamaOptions,
-    format: OllamaFormat,
+    format: serde_json::Value,
     stream: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct OllamaFormat {
-    r#type: String,
-    properties: Properties,
-    required: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Schema {
-    r#type: String,
-    properties: Properties,
-    required: Vec<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Properties {
-    concepts: ConceptsSchema,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct ConceptsSchema {
-    r#type: String,
-    items: Items, // Add this field
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct Items {
-    r#type: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,6 +31,7 @@ struct OllamaOptions {
 struct OllamaResponse {
     response: String,
 }
+
 pub struct ConceptsModel {
     base_url: String,
     client: Client,
@@ -102,18 +75,35 @@ impl ConceptsModel {
         lemmatized_words.join(" ")
     }
 
-    pub async fn generate_concepts(&self, text: &str) -> Result<Vec<Concept>, ApiError> {
-        let system_prompt = r#"You are a concept extractor that MUST:
-        1. Extract key concepts from the text
-        2. Output ONLY simple concepts separated by commas (NO bullet points, NO descriptions)
-        4. Example output:
-            Happy Prince, Golden Statue, Ruby Sword, Sapphire Eyes, Town Councillors
-        
-        DO NOT include:
-        - Bullet points (-)
-        - Descriptions or explanations
-        - Newlines
-        - Colons or semicolons"#;
+    fn build_candidate_hints(nlp_candidates: &[CandidateKeyword]) -> String {
+        if nlp_candidates.is_empty() {
+            return String::new();
+        }
+
+        let mut hints = String::from("\n\nCandidate keywords (from statistical analysis of full text):\n");
+        for candidate in nlp_candidates.iter().take(20) {
+            hints.push_str(&format!("- \"{}\" (score: {:.2})\n", candidate.phrase, candidate.score));
+        }
+        hints
+    }
+
+    pub async fn generate_concepts(
+        &self,
+        text: &str,
+        nlp_candidates: &[CandidateKeyword],
+    ) -> Result<Vec<Concept>, ApiError> {
+        let candidate_hints = Self::build_candidate_hints(nlp_candidates);
+
+        let system_prompt = format!(
+            r#"You are a concept extractor. Given a text and statistically-identified candidate keywords:
+1. Validate which candidates are meaningful concepts in context
+2. Add important concepts the statistics missed
+3. Rate each concept's importance from 0.0 to 1.0 (1.0 = central theme, 0.0 = barely relevant)
+4. Return 5-10 concepts total
+5. Each concept should be a simple word or short phrase (1-3 words)
+{candidate_hints}
+Output ONLY valid JSON matching the required schema."#
+        );
 
         let truncated_text = if text.len() > 500 {
             format!("{}...", &text[..500])
@@ -122,28 +112,36 @@ impl ConceptsModel {
         };
 
         let template = format!(
-            "Extract 5-10 key concepts from this text as simple words or short phrases separated by commas ONLY: {}",
+            "Extract 5-10 key concepts from this text. Rate each concept's importance from 0.0 to 1.0:\n\n{}",
             truncated_text
         );
-        let format: OllamaFormat = OllamaFormat {
-            r#type: "object".to_string(),
-            properties: Properties {
-                concepts: ConceptsSchema {
-                    r#type: "array".to_string(),
-                    items: Items {
-                        r#type: "string".to_string(),
-                    },
-                },
+
+        // JSON schema for structured output: { concepts: [{ name: string, importance: number }] }
+        let format: serde_json::Value = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "concepts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string" },
+                            "importance": { "type": "number" }
+                        },
+                        "required": ["name", "importance"]
+                    }
+                }
             },
-            required: vec!["concepts".to_string()],
-        };
+            "required": ["concepts"]
+        });
+
         info!("Requesting concepts using model: {}", self.model);
         let request = OllamaRequest {
             model: self.model.clone(),
             prompt: template,
-            system: system_prompt.to_string(),
+            system: system_prompt,
             options: OllamaOptions { temperature: 0.0 },
-            format: format,
+            format,
             stream: false,
         };
 
@@ -175,24 +173,54 @@ impl ConceptsModel {
         })?;
 
         #[derive(Debug, Deserialize)]
-        struct ConceptsResponse {
-            concepts: Vec<String>,
+        struct ConceptEntry {
+            name: String,
+            importance: Option<f64>,
         }
 
-        let concepts_response: ConceptsResponse = serde_json::from_str(&ollama_response.response)
-            .map_err(|e| {
-            info!("Error parsing nested JSON: {}", e);
-            ApiError::InternalError(format!("Failed to parse concepts JSON: {}", e))
-        })?;
+        #[derive(Debug, Deserialize)]
+        struct ConceptsResponse {
+            concepts: Vec<serde_json::Value>,
+        }
+
+        let concepts_response: ConceptsResponse =
+            serde_json::from_str(&ollama_response.response).map_err(|e| {
+                info!("Error parsing nested JSON: {}", e);
+                ApiError::InternalError(format!("Failed to parse concepts JSON: {}", e))
+            })?;
 
         let mut concepts: Vec<Concept> = Vec::new();
-        for concept in concepts_response.concepts {
-            let concept = concept.trim();
-            if !concept.is_empty() && concept.split_whitespace().count() <= 3 {
-                let lemmatized = self.lemmatize_concept(&concept);
-                concepts.push(Concept {
-                    concept: lemmatized,
-                });
+        for value in concepts_response.concepts {
+            match value {
+                // New format: { "name": "...", "importance": 0.8 }
+                serde_json::Value::Object(_) => {
+                    if let Ok(entry) = serde_json::from_value::<ConceptEntry>(value) {
+                        let name = entry.name.trim().to_string();
+                        if !name.is_empty() && name.split_whitespace().count() <= 3 {
+                            let lemmatized = self.lemmatize_concept(&name);
+                            let importance = entry
+                                .importance
+                                .map(|i| (i as f32).clamp(0.0, 1.0))
+                                .unwrap_or(0.5);
+                            concepts.push(Concept {
+                                concept: lemmatized,
+                                importance,
+                            });
+                        }
+                    }
+                }
+                // Backward compat: plain string
+                serde_json::Value::String(s) => {
+                    let s = s.trim();
+                    if !s.is_empty() && s.split_whitespace().count() <= 3 {
+                        let lemmatized = self.lemmatize_concept(s);
+                        concepts.push(Concept {
+                            concept: lemmatized,
+                            importance: 0.5,
+                        });
+                    }
+                }
+                _ => {}
             }
         }
 

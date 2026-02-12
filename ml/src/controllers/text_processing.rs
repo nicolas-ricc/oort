@@ -7,6 +7,7 @@ use crate::data::cdn::github::GitHubCDN;
 use crate::data::client::{DatabaseClient, TextReference};
 use crate::dimensionality;
 use crate::error::ApiError;
+use crate::models::concepts::KeywordExtractor;
 
 #[derive(Debug, Deserialize)]
 pub struct TextInput {
@@ -40,7 +41,9 @@ pub async fn process_concepts_and_embeddings(
 ) -> Result<HttpResponse, ApiError> {
     info!("Processing text of length: {}", text.len());
 
-    let new_concepts = state.concepts_model.generate_concepts(text).await?;
+    let extractor = KeywordExtractor::new();
+    let nlp_candidates = extractor.extract_candidates(text, 20);
+    let new_concepts = state.concepts_model.generate_concepts(text, &nlp_candidates).await?;
 
     if new_concepts.is_empty() {
         return Err(ApiError::NoConceptsExtracted);
@@ -117,7 +120,9 @@ pub async fn process_text(
     state: web::Data<AppState>,
 ) -> Result<impl Responder, ApiError> {
     // Process concepts and embeddings, and get the clustered results directly
-    let new_concepts = state.concepts_model.generate_concepts(&data.text).await?;
+    let extractor = KeywordExtractor::new();
+    let nlp_candidates = extractor.extract_candidates(&data.text, 20);
+    let new_concepts = state.concepts_model.generate_concepts(&data.text, &nlp_candidates).await?;
 
     if new_concepts.is_empty() {
         return Err(ApiError::NoConceptsExtracted);

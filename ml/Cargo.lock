@@ -1646,6 +1646,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyword_extraction"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bab83c382982b79063036f88b9e722b899c23e750f1318ceead83ccd7413f874"
+dependencies = [
+ "regex",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "language-tags"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2176,6 +2186,7 @@ dependencies = [
  "chrono",
  "env_logger",
  "futures",
+ "keyword_extraction",
  "linfa",
  "linfa-clustering",
  "linfa-reduction",
@@ -2189,6 +2200,7 @@ dependencies = [
  "rust-stemmers",
  "serde",
  "serde_json",
+ "stop-words",
  "thiserror 2.0.12",
  "tokenizers",
  "tokio",
@@ -2907,6 +2919,15 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "stop-words"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "645a3d441ccf4bf47f2e4b7681461986681a6eeea9937d4c3bc9febd61d17c71"
+dependencies = [
+ "serde_json",
+]
 
 [[package]]
 name = "strsim"

@@ -20,7 +20,7 @@ async fn health() -> HttpResponse {
 
 async fn preload_models(concepts_model: &ConceptsModel, embedding_model: &EmbeddingModel) {
     info!("Preloading models...");
-    if let Err(e) = concepts_model.generate_concepts("Preloading...").await {
+    if let Err(e) = concepts_model.generate_concepts("Preloading...", &[]).await {
         info!("Error preloading concepts model: {:?}", e);
     }
     if let Err(e) = embedding_model
