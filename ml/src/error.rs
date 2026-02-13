@@ -24,6 +24,12 @@ pub enum ApiError {
     
     #[error("Internal server error: {0}")]
     InternalError(String),
+
+    #[error("Failed to fetch URL: {0}")]
+    UrlFetchError(String),
+
+    #[error("Failed to extract content: {0}")]
+    ContentExtractionError(String),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -37,6 +43,8 @@ impl ResponseError for ApiError {
         let status_code = match self {
             ApiError::NoConceptsExtracted => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::FileDecodeError => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::UrlFetchError(_) => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::ContentExtractionError(_) => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
             _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         

@@ -13,6 +13,7 @@ use crate::controllers::text_processing::{process_text, get_texts_by_concept, Ap
 use crate::models::concepts::ConceptsModel;
 use crate::models::embeddings::EmbeddingModel;
 use crate::data::client::DatabaseClient;
+use crate::data::scraper::ArticleScraper;
 
 async fn health() -> HttpResponse {
     HttpResponse::Ok().body("ok")
@@ -56,12 +57,15 @@ async fn main() -> std::io::Result<()> {
             .expect("Failed to connect to database"),
     );
 
+    let scraper = Arc::new(ArticleScraper::new());
+
     preload_models(&concepts_model, &embedding_model).await;
 
     let app_state = web::Data::new(AppState {
         concepts_model,
         embedding_model,
         db_client,
+        scraper,
     });
 
     HttpServer::new(move || {

@@ -105,11 +105,7 @@ impl ConceptsModel {
 Output ONLY valid JSON matching the required schema."#
         );
 
-        let truncated_text = if text.len() > 500 {
-            format!("{}...", &text[..500])
-        } else {
-            text.to_string()
-        };
+        let truncated_text = super::truncation::truncate_at_sentence_boundary(text, 500);
 
         let template = format!(
             "Extract 5-10 key concepts from this text. Rate each concept's importance from 0.0 to 1.0:\n\n{}",

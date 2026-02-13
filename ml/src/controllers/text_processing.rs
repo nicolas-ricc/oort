@@ -5,13 +5,15 @@ use std::sync::Arc;
 use uuid::Uuid;
 use crate::data::cdn::github::GitHubCDN;
 use crate::data::client::{DatabaseClient, TextReference};
+use crate::data::scraper::{ArticleScraper, derive_filename};
 use crate::dimensionality;
 use crate::error::ApiError;
 use crate::models::concepts::KeywordExtractor;
 
 #[derive(Debug, Deserialize)]
 pub struct TextInput {
-    pub text: String,
+    pub text: Option<String>,
+    pub url: Option<String>,
     pub user_id: Option<String>,
     pub filename: Option<String>,
 }
@@ -32,6 +34,7 @@ pub struct AppState {
     pub concepts_model: Arc<crate::models::concepts::ConceptsModel>,
     pub embedding_model: Arc<crate::models::embeddings::EmbeddingModel>,
     pub db_client: Arc<DatabaseClient>,
+    pub scraper: Arc<ArticleScraper>,
 }
 
 pub async fn process_concepts_and_embeddings(
@@ -119,10 +122,36 @@ pub async fn process_text(
     data: web::Json<TextInput>,
     state: web::Data<AppState>,
 ) -> Result<impl Responder, ApiError> {
-    // Process concepts and embeddings, and get the clustered results directly
+    // Resolve text content: either from direct text or by scraping a URL
+    let (text, filename, source_url) = match (&data.text, &data.url) {
+        (Some(text), None) => {
+            let filename = data.filename.clone().unwrap_or_else(|| {
+                format!("processed_text_{}.txt", Uuid::new_v4())
+            });
+            (text.clone(), filename, None)
+        }
+        (None, Some(url)) => {
+            let article = state.scraper.scrape_url(url).await?;
+            let filename = data.filename.clone().unwrap_or_else(|| {
+                derive_filename(&article.title, url)
+            });
+            (article.text_content, filename, Some(url.clone()))
+        }
+        (Some(_), Some(_)) => {
+            return Err(ApiError::InternalError(
+                "Provide either 'text' or 'url', not both".to_string(),
+            ));
+        }
+        (None, None) => {
+            return Err(ApiError::InternalError(
+                "Provide either 'text' or 'url'".to_string(),
+            ));
+        }
+    };
+
     let extractor = KeywordExtractor::new();
-    let nlp_candidates = extractor.extract_candidates(&data.text, 20);
-    let new_concepts = state.concepts_model.generate_concepts(&data.text, &nlp_candidates).await?;
+    let nlp_candidates = extractor.extract_candidates(&text, 20);
+    let new_concepts = state.concepts_model.generate_concepts(&text, &nlp_candidates).await?;
 
     if new_concepts.is_empty() {
         return Err(ApiError::NoConceptsExtracted);
@@ -191,10 +220,12 @@ pub async fn process_text(
     let clustered_results = mind_map.process_concepts(&all_concepts, &all_embeddings)?;
 
     // Spawn CDN upload + text reference saving as background task
-    let text_for_cdn = data.text.clone();
-    let filename_for_cdn = data.filename.clone().unwrap_or_else(|| {
-        format!("processed_text_{}.txt", Uuid::new_v4())
-    });
+    let text_for_cdn = if let Some(url) = &source_url {
+        format!("Source: {}\n\n{}", url, text)
+    } else {
+        text.clone()
+    };
+    let filename_for_cdn = filename.clone();
     let user_id_for_cdn = data.user_id.clone();
     let all_concept_strings: Vec<String> = all_concepts.iter().map(|c| c.concept.clone()).collect();
     let db_client_cdn = Arc::clone(&state.db_client);
@@ -278,9 +309,10 @@ mod tests {
             let json = r#"{"text": "Hello world", "user_id": "123", "filename": "test.txt"}"#;
             let input: TextInput = serde_json::from_str(json).unwrap();
 
-            assert_eq!(input.text, "Hello world");
+            assert_eq!(input.text, Some("Hello world".to_string()));
             assert_eq!(input.user_id, Some("123".to_string()));
             assert_eq!(input.filename, Some("test.txt".to_string()));
+            assert!(input.url.is_none());
         }
 
         #[test]
@@ -288,9 +320,29 @@ mod tests {
             let json = r#"{"text": "Just text"}"#;
             let input: TextInput = serde_json::from_str(json).unwrap();
 
-            assert_eq!(input.text, "Just text");
+            assert_eq!(input.text, Some("Just text".to_string()));
             assert!(input.user_id.is_none());
             assert!(input.filename.is_none());
+            assert!(input.url.is_none());
+        }
+
+        #[test]
+        fn test_text_input_deserialization_with_url() {
+            let json = r#"{"url": "https://example.com/article", "user_id": "123"}"#;
+            let input: TextInput = serde_json::from_str(json).unwrap();
+
+            assert!(input.text.is_none());
+            assert_eq!(input.url, Some("https://example.com/article".to_string()));
+            assert_eq!(input.user_id, Some("123".to_string()));
+        }
+
+        #[test]
+        fn test_text_input_rejects_missing_both() {
+            let json = r#"{"user_id": "123"}"#;
+            let input: TextInput = serde_json::from_str(json).unwrap();
+
+            assert!(input.text.is_none());
+            assert!(input.url.is_none());
         }
 
         #[test]
