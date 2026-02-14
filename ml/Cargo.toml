@@ -22,7 +22,6 @@ futures = "0.3"
 bytes = "1.5"
 regex = "1.9"
 linfa = "0.7.1"
-linfa-clustering = "0.7.1"
 linfa-reduction = "0.7.1"
 tokenizers = "0.21.2"
 rust-stemmers = "1.2"
@@ -33,6 +32,7 @@ base64 = "0.22"
 keyword_extraction = { version = "1.5", features = ["rake", "tf_idf"] }
 stop-words = "0.9"
 dom_smoothie = "0.6"
+dom_query = "0.14"
 
 [features]
 default = []

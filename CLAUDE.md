@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Oort is a concept visualization system that processes text to extract concepts, generates embeddings via Ollama, and displays them as an interactive 3D mind-map. Users upload text, concepts are extracted using an LLM, embedded, clustered via K-means, and rendered as planets in 3D space.
+Oort is a concept visualization system that processes text to extract concepts, generates embeddings via Ollama, and displays them as an interactive 3D mind-map. Users upload text files or paste URLs, concepts are extracted using NLP pre-processing (RAKE + TF-IDF) followed by an LLM, embedded, clustered via K-means, and rendered as planets in 3D space.
 
 ## Architecture
 
@@ -23,7 +23,9 @@ Oort is a concept visualization system that processes text to extract concepts, 
 
 ### ML Backend (Rust - `ml/`)
 - **Actix-web** server exposing `/api/vectorize` and `/api/texts-by-concept`
-- **ConceptsModel** (`models/concepts/`) - Extracts concepts from text using Ollama (phi3.5)
+- **ArticleScraper** (`data/scraper.rs`) - Fetches and extracts article content from URLs using `dom_smoothie` (Readability.js port) with two-layer noise filtering
+- **KeywordExtractor** (`models/concepts/nlp.rs`) - RAKE + TF-IDF pre-processing on full text to generate candidate keywords for the LLM
+- **ConceptsModel** (`models/concepts/`) - Extracts concepts from text using Ollama (phi3.5), with NLP candidate hints and sentence-boundary truncation at 500 chars
 - **EmbeddingModel** (`models/embeddings/`) - Generates embeddings using Ollama (snowflake-arctic-embed2)
 - **MindMapProcessor** (`dimensionality.rs`) - Merges similar concepts, builds similarity matrix, runs force-directed layout, applies K-means clustering, and reduces to 3D via PCA (linfa)
 - **DatabaseClient** (`data/client.rs`) - Cassandra operations for concepts and text references
@@ -34,7 +36,7 @@ Oort is a concept visualization system that processes text to extract concepts, 
 - `cloud/Scene.tsx` - Main 3D scene rendering planets from concept clusters
 - `cloud/Planet.tsx` - Individual concept planet with texture and label
 - `cloud/Render.tsx` - Canvas setup and camera controls
-- `layout/Menu.tsx` - Text input and concept search interface
+- `layout/Menu.tsx` - Concept search, file upload, and URL input interface
 - Uses TanStack Query for API calls
 
 ### Database (Cassandra - `db/`)

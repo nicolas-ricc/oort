@@ -21,35 +21,56 @@ cargo build --release        # Production build
 ## Processing Pipeline
 
 ```
-Text Input
+Text Input (raw text or URL)
     ↓
-ConceptsModel::generate_concepts()     # controllers/text_processing.rs:120
-    ↓ (Ollama phi3.5)
-EmbeddingModel::get_batch_embeddings() # controllers/text_processing.rs:155
+ArticleScraper::scrape_url()              # data/scraper.rs (URL input only)
+    ↓ (dom_smoothie Readability + noise filtering)
+KeywordExtractor::extract_candidates()    # models/concepts/nlp.rs
+    ↓ (RAKE + TF-IDF on full text, top 20 candidates)
+truncate_at_sentence_boundary()           # models/concepts/truncation.rs
+    ↓ (500 chars, sentence-aware)
+ConceptsModel::generate_concepts()        # models/concepts/model.rs
+    ↓ (Ollama phi3.5, with NLP candidates as hints)
+EmbeddingModel::get_batch_embeddings()    # models/embeddings/model.rs
     ↓ (Ollama snowflake-arctic-embed2)
-MindMapProcessor::process_concepts()   # dimensionality.rs:66
-    ├── merge_similar_concepts()       # Cosine similarity > 0.7
+MindMapProcessor::process_concepts()      # dimensionality.rs
+    ├── merge_similar_concepts()          # Cosine similarity > 0.7
     ├── build_similarity_matrix()
-    ├── run_force_directed_layout()    # 200 iterations
-    ├── apply_clustering()             # K-means via linfa
+    ├── run_force_directed_layout()       # 200 iterations
+    ├── apply_clustering()                # K-means via linfa
     └── PCA reduction to 3D
     ↓
 ConceptGroup[] with 3D positions
 ```
 
+### NLP Pre-processing (`models/concepts/nlp.rs`)
+`KeywordExtractor` runs RAKE + TF-IDF on the **full text** before the LLM call. This compensates for the 500-char truncation by providing statistical keyword candidates as hints in the phi3.5 system prompt.
+
+### Text Truncation (`models/concepts/truncation.rs`)
+`truncate_at_sentence_boundary(text, 500)` replaces raw byte slicing. Uses a tiered fallback: sentence end > paragraph break > markdown heading > newline > word boundary > char-safe cut. Filters abbreviations (Dr., U.S., etc.) and is UTF-8 safe.
+
+### URL Scraping (`data/scraper.rs`)
+`ArticleScraper` fetches web pages and extracts article content using `dom_smoothie` (Rust Readability.js port). Two-layer noise filtering: `pre_clean_dom()` removes 30+ CSS selector patterns (reading time, author blocks, related posts, share buttons, etc.) before Readability, then `clean_extracted_text()` regex-cleans residual metadata patterns. JS-heavy sites may fail — the error messaging suggests manual upload as fallback.
+
 ## Key Types
 
 ```rust
-// models/embeddings/model.rs:8
+// models/concepts/model.rs
+pub struct Concept {
+    pub concept: String,
+    pub importance: f32,    // From LLM, blended with NLP score
+}
+
+// models/embeddings/model.rs
 pub type Embedding = Array1<f32>;
 
-// dimensionality.rs:13
+// dimensionality.rs
 pub struct ConceptGroup {
     pub concepts: Vec<String>,
     pub reduced_embedding: Vec<f32>,  // 3D coordinates
     pub cluster: usize,
     pub connections: Vec<usize>,
-    pub importance_score: f32,
+    pub importance_score: f32,        // 40% NLP + 40% connections + 20% concept count
 }
 ```
 
@@ -69,8 +90,8 @@ pub struct ConceptGroup {
 
 ### POST /api/vectorize
 ```json
-// Request
-{ "text": "...", "user_id": "uuid", "filename": "optional.txt" }
+// Request — provide either text or url (not both)
+{ "text": "...", "url": "https://...", "user_id": "uuid", "filename": "optional.txt" }
 
 // Response
 { "success": true, "data": [ConceptGroup, ...] }
@@ -101,6 +122,8 @@ Returns text references containing the concept.
 
 - `ApiError::NoConceptsExtracted` → 422 (no concepts found in text)
 - `ApiError::EmbeddingGenerationError` → 422 (embedding count mismatch)
+- `ApiError::UrlFetchError` → 422 (URL fetch failed or unreachable)
+- `ApiError::ContentExtractionError` → 422 (Readability couldn't extract article or content too short)
 - `ApiError::RequestError` → 500 (Ollama/external service failure)
 - `ApiError::DatabaseError` → 500 (Cassandra failure)
 

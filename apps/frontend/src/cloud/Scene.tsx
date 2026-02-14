@@ -384,29 +384,6 @@ export function Scene({
         return calculateClusterLighting(clusters, points);
     }, [adjustedNodes]);
 
-    // Create node to cluster index mapping
-    const nodeClusterMap = useMemo(() => {
-        const map = new Map<string, number>();
-        if (adjustedNodes.length < 2) return map;
-
-        const points = adjustedNodes.map((node: any) => ({
-            position: safeParseEmbedding(node.reduced_embedding, SCENE_SCALE),
-            node
-        }));
-
-        const clusterDistance = 4 * SCENE_SCALE;
-        const { clusters } = dbscan3D(points, clusterDistance, 2);
-
-        clusters.forEach((cluster, clusterIndex) => {
-            cluster.forEach(pointIndex => {
-                const pos = points[pointIndex].position;
-                const key = pos.map(String).join("-");
-                map.set(key, clusterIndex);
-            });
-        });
-
-        return map;
-    }, [adjustedNodes]);
 
     return (
         <>
@@ -423,7 +400,7 @@ export function Scene({
                     calculateDistance(safeEmbedding, activeNodePosition) <= conceptDistance : false;
                 const shouldShowConcepts = isSelected || isNearActive;
                 const textureIndex = getTextureIndexForPlanet(safeEmbedding, textures.length);
-                const clusterIndex = nodeClusterMap.get(keyString) ?? 0;
+                const clusterIndex = idx;
 
                 return (
                     <Fragment key={`${keyString}-${idx}`}>

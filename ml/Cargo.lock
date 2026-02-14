@@ -1863,25 +1863,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "linfa-clustering"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be0bc52d5e4da397609cd0e6007efc6bd278158d1803673bd936c374f27513c5"
-dependencies = [
- "linfa",
- "linfa-linalg",
- "linfa-nn",
- "ndarray 0.15.6",
- "ndarray-rand",
- "ndarray-stats 0.5.1",
- "noisy_float",
- "num-traits",
- "rand_xoshiro",
- "space",
- "thiserror 1.0.69",
-]
-
-[[package]]
 name = "linfa-kernel"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2142,7 +2123,6 @@ dependencies = [
  "num-integer",
  "num-traits",
  "rawpointer",
- "rayon",
 ]
 
 [[package]]
@@ -2362,12 +2342,12 @@ dependencies = [
  "bytes",
  "cdrs-tokio",
  "chrono",
+ "dom_query",
  "dom_smoothie",
  "env_logger",
  "futures",
  "keyword_extraction",
  "linfa",
- "linfa-clustering",
  "linfa-reduction",
  "log",
  "ndarray 0.15.6",
@@ -3145,12 +3125,6 @@ dependencies = [
  "libc",
  "windows-sys 0.52.0",
 ]
-
-[[package]]
-name = "space"
-version = "0.12.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e990cc6cb89a82d70fe722cd7811dbce48a72bbfaebd623e58f142b6db28428f"
 
 [[package]]
 name = "spm_precompiled"

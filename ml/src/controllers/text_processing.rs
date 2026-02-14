@@ -375,7 +375,6 @@ mod tests {
             let group = ConceptGroup {
                 concepts: vec!["concept1".to_string(), "concept2".to_string()],
                 reduced_embedding: vec![1.0, 2.0, 3.0],
-                cluster: 0,
                 connections: vec![1, 2],
                 importance_score: 0.85,
             };
@@ -387,7 +386,6 @@ mod tests {
             assert_eq!(parsed["concepts"][0], "concept1");
             assert!(parsed["reduced_embedding"].is_array());
             assert_eq!(parsed["reduced_embedding"].as_array().unwrap().len(), 3);
-            assert_eq!(parsed["cluster"], 0);
             assert!(parsed["connections"].is_array());
             assert!(parsed["importance_score"].is_f64());
         }
@@ -430,14 +428,12 @@ mod tests {
                 ConceptGroup {
                     concepts: vec!["artificial intelligence".to_string()],
                     reduced_embedding: vec![0.5, -0.3, 0.8],
-                    cluster: 0,
                     connections: vec![1],
                     importance_score: 1.5,
                 },
                 ConceptGroup {
                     concepts: vec!["machine learning".to_string()],
                     reduced_embedding: vec![-0.2, 0.7, 0.1],
-                    cluster: 0,
                     connections: vec![0],
                     importance_score: 1.2,
                 },
@@ -514,7 +510,6 @@ mod tests {
             assert!(first_group["concepts"].is_array());
             assert!(first_group["reduced_embedding"].is_array());
             assert_eq!(first_group["reduced_embedding"].as_array().unwrap().len(), 3);
-            assert!(first_group["cluster"].is_number());
             assert!(first_group["connections"].is_array());
             assert!(first_group["importance_score"].is_number());
         }

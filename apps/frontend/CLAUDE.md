@@ -11,8 +11,12 @@ React + TypeScript frontend for Oort concept visualization. Uses React Three Fib
 ### 1. Empty State (first launch)
 The app starts with **no data** (`simulationData` is an empty array). The 3D canvas renders full-screen showing only the starfield background. An `EmptyStateModal` overlays the scene — a terminal-themed card prompting the user to upload a text file.
 
-### 2. File Upload
-The user clicks "Upload Text File" in the modal (or later via the upload icon in the Menu). The file is read client-side, sent to `POST /api/vectorize`, and the backend returns `ConceptCluster[]` data. During processing, a blinking loading indicator is shown. On success, `simulationData` is populated and `isEmpty` flips to `false`.
+### 2. Content Input
+The user can provide content in two ways:
+- **File upload**: Click "Upload Text File" in the modal or via the upload icon in Menu. The file is read client-side and sent to `POST /api/vectorize`.
+- **URL input**: Paste a URL and click GO. The backend scrapes the article content via `dom_smoothie` Readability.
+
+Both paths send to `/api/vectorize` and return `ConceptCluster[]` data. During processing, a blinking loading indicator is shown. On success, `simulationData` is populated and `isEmpty` flips to `false`.
 
 ### 3. Visualization
 Once data exists, the modal unmounts. The layout switches to a 70/30 split: the 3D canvas (top 70%) renders planets from concept clusters, and the Menu (bottom 30%) shows a searchable concept list with file upload. The camera auto-focuses on the first uploaded cluster's planet.
@@ -72,10 +76,11 @@ App.tsx
 - `cloud/Planet.tsx` - Planet mesh with texture and floating label
 - `cloud/Render.tsx` - R3F Canvas setup, `onPointerMissed` deselection, passes `screenPositionRef` and `onAnimatingChange` to parent
 - `layout/Layout.tsx` - Responsive shell: full-height canvas when `isEmpty`, 70/30 split otherwise
-- `layout/Menu.tsx` - Terminal-styled command palette with concept search and file upload icon
+- `layout/Menu.tsx` - Terminal-styled command palette with concept search, file upload icon, and collapsible URL input row
 - `layout/FloatingPlanetPanel.tsx` - DOM overlay positioned via `screenPositionRef`, shows concepts + source texts for selected planet
-- `layout/EmptyStateModal.tsx` - Full-screen modal for first-time upload, uses `useFileUpload` hook
-- `hooks/useFileUpload.ts` - Shared TanStack Query mutation for file upload (used by Menu and EmptyStateModal)
+- `layout/EmptyStateModal.tsx` - Full-screen modal for first-time upload (file or URL), uses `useFileUpload` and `useUrlUpload` hooks
+- `hooks/useFileUpload.ts` - TanStack Query mutation for file upload (used by Menu and EmptyStateModal)
+- `hooks/useUrlUpload.ts` - TanStack Query mutation for URL submission (used by Menu and EmptyStateModal)
 - `hooks/useNavigation.ts` - Keyboard/programmatic navigation between planets
 
 ## 3D-to-Screen Projection (FloatingPlanetPanel)
@@ -113,8 +118,8 @@ This constant controls all 3D positioning: planet distances, camera position, co
 ## API Integration
 
 ```typescript
-// POST /api/vectorize
-{ text: string, user_id?: string, filename?: string }
+// POST /api/vectorize — provide either text or url
+{ text?: string, url?: string, user_id?: string, filename?: string }
 // Returns: { success: boolean, data: ConceptCluster[] }
 
 // GET /api/texts-by-concept?concept=X&user_id=Y

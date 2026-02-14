@@ -13,7 +13,7 @@ const SCENE_SCALE = 2;
 export type ConceptCluster = {
   concepts: string[];
   reduced_embedding: number[];
-  cluster: number;
+  cluster?: number;
 }
 
 export type Simulation = ConceptCluster[]

@@ -21,7 +21,7 @@ export function PlanetMesh({ texturePath, radius, atmosphereColor, isSelected, o
 
   // Set emissive properties (can't be in useMemo due to atmosphereColor dependency)
   material.emissive = new Color(atmosphereColor);
-  material.emissiveIntensity = 0.08;
+  material.emissiveIntensity = 0.05;
 
   useFrame(() => {
     if (meshRef.current) {

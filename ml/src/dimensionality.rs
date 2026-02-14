@@ -1,8 +1,6 @@
 use crate::error::ApiError;
 use crate::models::concepts::Concept;
 use crate::models::embeddings::Embedding;
-use linfa::prelude::*;
-use linfa_clustering::KMeans;
 use linfa_reduction::Pca;
 use log::info;
 use ndarray::{Array2, ArrayView1};
@@ -14,7 +12,6 @@ use std::collections::HashSet;
 pub struct ConceptGroup {
     pub concepts: Vec<String>,
     pub reduced_embedding: Vec<f32>,
-    pub cluster: usize,
     pub connections: Vec<usize>,
     pub importance_score: f32,
 }
@@ -88,11 +85,8 @@ impl MindMapProcessor {
         // Step 4: Run force-directed layout
         self.run_force_directed_layout(merged_embeddings.len())?;
 
-        // Step 5: Apply clustering
-        let clusters = self.apply_clustering(&merged_embeddings)?;
-
-        // Step 6: Build final concept groups
-        self.build_concept_groups(&merged_groups, &clusters);
+        // Step 5: Build final concept groups
+        self.build_concept_groups(&merged_groups);
 
         Ok(self.concept_groups.clone())
     }
@@ -258,72 +252,16 @@ impl MindMapProcessor {
         Ok(())
     }
 
-    fn apply_clustering(&self, embeddings: &[Embedding]) -> Result<Vec<usize>, ApiError> {
-        use linfa::prelude::*;
-        use linfa_clustering::KMeans;
-        use ndarray::Array2;
-
-        info!("Starting K-means clustering with {} embeddings", embeddings.len());
-
-        if embeddings.is_empty() {
-            return Err(ApiError::InternalError("Empty embeddings".to_string()));
-        }
-
-        let n_features = embeddings[0].len();
-        if n_features == 0 {
-            return Err(ApiError::InternalError("Embeddings have zero dimensions".to_string()));
-        }
-
-        info!("Embedding dimensions: {}", n_features);
-
-        let mut data = Array2::zeros((embeddings.len(), n_features));
-
-        info!("Building data matrix: {} x {}", embeddings.len(), n_features);
-        for (i, embedding) in embeddings.iter().enumerate() {
-            if embedding.len() != n_features {
-                return Err(ApiError::InternalError(format!(
-                    "Embedding {} has {} dimensions, expected {}",
-                    i, embedding.len(), n_features
-                )));
-            }
-            for (j, &val) in embedding.iter().enumerate() {
-                data[[i, j]] = val as f64;
-            }
-        }
-
-        info!("Creating dataset for clustering");
-        let dataset = Dataset::from(data);
-        let n_clusters = 3.min(embeddings.len());
-
-        info!("Running K-means with {} clusters", n_clusters);
-        let kmeans = KMeans::params(n_clusters)
-            .max_n_iterations(50)
-            .tolerance(1e-3)
-            .fit(&dataset)
-            .map_err(|e| {
-                log::error!("K-means clustering failed: {}", e);
-                ApiError::DimensionalityError(format!("K-Means error: {}", e))
-            })?;
-
-        info!("K-means clustering completed, making predictions");
-        let predictions = kmeans.predict(dataset);
-        let clusters: Vec<usize> = predictions.targets.iter().map(|&x| x as usize).collect();
-        
-        info!("Clustering completed successfully with {} cluster assignments", clusters.len());
-        Ok(clusters)
-    }
-
     fn build_concept_groups(
         &mut self,
         merged_groups: &[(Vec<String>, Embedding, Vec<f32>)],
-        clusters: &[usize],
     ) {
         self.concept_groups.clear();
 
-        info!("Building concept groups: {} merged groups, {} clusters, {} positions",
-              merged_groups.len(), clusters.len(), self.positions.len());
+        info!("Building concept groups: {} merged groups, {} positions",
+              merged_groups.len(), self.positions.len());
 
-        for (i, ((concepts, _, importances), &cluster)) in merged_groups.iter().zip(clusters).enumerate() {
+        for (i, (concepts, _, importances)) in merged_groups.iter().enumerate() {
             if i >= self.positions.len() {
                 log::error!("Position index {} out of bounds for positions array of length {}",
                            i, self.positions.len());
@@ -336,7 +274,6 @@ impl MindMapProcessor {
             self.concept_groups.push(ConceptGroup {
                 concepts: concepts.clone(),
                 reduced_embedding: self.positions[i].to_vec(),
-                cluster,
                 connections,
                 importance_score,
             });
