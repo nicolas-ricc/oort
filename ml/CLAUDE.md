@@ -34,13 +34,12 @@ ConceptsModel::generate_concepts()        # models/concepts/model.rs
 EmbeddingModel::get_batch_embeddings()    # models/embeddings/model.rs
     ↓ (Ollama snowflake-arctic-embed2)
 MindMapProcessor::process_concepts()      # dimensionality.rs
-    ├── merge_similar_concepts()          # Cosine similarity > 0.7
-    ├── build_similarity_matrix()
-    ├── run_force_directed_layout()       # 200 iterations
-    ├── apply_clustering()                # K-means via linfa
-    └── PCA reduction to 3D
+    ├── merge_similar_concepts()          # Union-Find, cosine similarity > 0.7
+    ├── build_similarity_matrix()         # Continuous (no threshold), all positive similarities
+    ├── initialize_pca_positions()        # PCA to 3D via linfa (deterministic init)
+    └── run_force_directed_layout()       # Universal repulsion + continuous attraction, convergence detection
     ↓
-ConceptGroup[] with 3D positions
+ConceptGroup[] with 3D positions + group_id
 ```
 
 ### NLP Pre-processing (`models/concepts/nlp.rs`)
@@ -67,24 +66,26 @@ pub type Embedding = Array1<f32>;
 // dimensionality.rs
 pub struct ConceptGroup {
     pub concepts: Vec<String>,
-    pub reduced_embedding: Vec<f32>,  // 3D coordinates
-    pub cluster: usize,
+    pub reduced_embedding: Vec<f32>,  // 3D coordinates (PCA-initialized, force-refined)
     pub connections: Vec<usize>,
     pub importance_score: f32,        // 40% NLP + 40% connections + 20% concept count
+    pub group_id: usize,             // Semantic cluster ID from Union-Find merge groups
 }
 ```
 
 ## Force Layout Parameters
 
-`dimensionality.rs:34` - `ForceParams::default()`:
+`dimensionality.rs:30` - `ForceParams::default()`:
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
-| attraction_strength | 2.0 | Pull connected nodes together |
-| repulsion_strength | 100.0 | Push all nodes apart |
-| center_gravity | 0.2 | Pull toward origin |
+| attraction_strength | 2.0 | Pull similar nodes together (weighted by continuous similarity) |
+| repulsion_strength | 10.0 | Universal inverse-square repulsion between all pairs |
+| center_gravity | 0.1 | Weak pull toward origin (prevents drift) |
 | damping | 0.9 | Velocity decay |
-| min_distance | 3.0 | Minimum node separation |
-| similarity_threshold | 0.7 | Merge concepts above this |
+| min_distance | 3.0 | (Legacy, unused — repulsion is now universal) |
+| max_velocity | 2.0 | Velocity clamp |
+| iterations | 150 | Max iterations (early exit on convergence < 0.001) |
+| similarity_threshold | 0.7 | Merge concepts above this (Union-Find only, not force layout) |
 
 ## API Endpoints
 
@@ -139,7 +140,7 @@ Run tests with `cargo test`. Tests are located in `controllers/text_processing.r
 | `test_text_input_deserialization_minimal` | TextInput with only required `text` field |
 | `test_concept_query_deserialization` | ConceptQuery query params parsing |
 | `test_api_response_serialization` | ApiResponse<T> serializes with `success` and `data` |
-| `test_concept_group_serialization` | ConceptGroup has all fields (concepts, reduced_embedding, cluster, connections, importance_score) |
+| `test_concept_group_serialization` | ConceptGroup has all fields (concepts, reduced_embedding, connections, importance_score, group_id) |
 | `test_text_reference_serialization` | TextReference has all fields (text_id, user_id, filename, url, concepts, upload_timestamp, file_size) |
 
 ### Endpoint Contract Tests (`tests::endpoint_tests`)

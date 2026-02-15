@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ConceptCluster } from '@/App';
 
-const SCENE_SCALE = 2;
-
 export type NavigationState = {
   currentIndex: number;
   totalCount: number;
@@ -21,12 +19,7 @@ export type NavigationActions = {
 };
 
 function getNodeKey(node: ConceptCluster): string {
-  if (!node?.reduced_embedding) return '';
-  const safeEmbedding = node.reduced_embedding.map(p => {
-    let val = typeof p === 'string' ? parseFloat(p) : Number(p);
-    return isNaN(val) ? 0 : val * SCENE_SCALE;
-  });
-  return safeEmbedding.map(String).join('-');
+  return node.concepts?.slice().sort().join("|") ?? "";
 }
 
 export function useNavigation(

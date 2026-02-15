@@ -3,10 +3,8 @@ use crate::models::concepts::Concept;
 use crate::models::embeddings::Embedding;
 use linfa_reduction::Pca;
 use log::info;
-use ndarray::{Array2, ArrayView1};
-use ndarray_linalg::Norm;
+use ndarray::ArrayView1;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConceptGroup {
@@ -14,6 +12,7 @@ pub struct ConceptGroup {
     pub reduced_embedding: Vec<f32>,
     pub connections: Vec<usize>,
     pub importance_score: f32,
+    pub group_id: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -32,12 +31,12 @@ impl Default for ForceParams {
     fn default() -> Self {
         Self {
             attraction_strength: 2.0,
-            repulsion_strength: 100.0,
-            center_gravity: 0.2,
+            repulsion_strength: 10.0,
+            center_gravity: 0.1,
             damping: 0.9,
             min_distance: 3.0,
             max_velocity: 2.0,
-            iterations: 200,
+            iterations: 150,
             similarity_threshold: 0.7,
         }
     }
@@ -76,14 +75,14 @@ impl MindMapProcessor {
         // Step 2: Extract merged embeddings for processing
         let merged_embeddings: Vec<Embedding> = merged_groups
             .iter()
-            .map(|(_, embedding, _)| embedding.clone())
+            .map(|(_, embedding, _, _)| embedding.clone())
             .collect();
 
-        // Step 3: Build similarity matrix
+        // Step 3: Build similarity matrix (continuous, no threshold)
         self.build_similarity_matrix(&merged_embeddings);
 
-        // Step 4: Run force-directed layout
-        self.run_force_directed_layout(merged_embeddings.len())?;
+        // Step 4: Run force-directed layout with PCA initialization
+        self.run_force_directed_layout(&merged_embeddings)?;
 
         // Step 5: Build final concept groups
         self.build_concept_groups(&merged_groups);
@@ -95,7 +94,7 @@ impl MindMapProcessor {
         &self,
         concepts: &[Concept],
         embeddings: &[Embedding],
-    ) -> Result<Vec<(Vec<String>, Embedding, Vec<f32>)>, ApiError> {
+    ) -> Result<Vec<(Vec<String>, Embedding, Vec<f32>, usize)>, ApiError> {
         if concepts.is_empty() || embeddings.is_empty() {
             return Err(ApiError::InternalError(
                 "Empty concepts or embeddings".to_string(),
@@ -183,7 +182,7 @@ impl MindMapProcessor {
         }
 
         let mut merged_groups = Vec::new();
-        for (_, indices) in groups {
+        for (root, indices) in &groups {
             let group_concepts: Vec<String> = indices
                 .iter()
                 .map(|&idx| concepts[idx].concept.clone())
@@ -198,13 +197,13 @@ impl MindMapProcessor {
             let mut avg_embedding = embeddings[indices[0]].clone();
             if indices.len() > 1 {
                 avg_embedding.fill(0.0);
-                for &idx in &indices {
+                for &idx in indices {
                     avg_embedding += &embeddings[idx];
                 }
                 avg_embedding /= indices.len() as f32;
             }
 
-            merged_groups.push((group_concepts, avg_embedding, group_importances));
+            merged_groups.push((group_concepts, avg_embedding, group_importances, *root));
         }
 
         info!(
@@ -223,7 +222,9 @@ impl MindMapProcessor {
         for i in 0..n {
             for j in (i + 1)..n {
                 let similarity = self.cosine_similarity(embeddings[i].view(), embeddings[j].view());
-                if similarity > self.force_params.similarity_threshold {
+                // Store all positive similarities (continuous, no threshold)
+                // This preserves gradient information for force-directed layout
+                if similarity > 0.0 {
                     self.similarity_matrix[i][j] = similarity;
                     self.similarity_matrix[j][i] = similarity;
                 }
@@ -231,21 +232,34 @@ impl MindMapProcessor {
         }
     }
 
-    fn run_force_directed_layout(&mut self, n: usize) -> Result<(), ApiError> {
+    fn run_force_directed_layout(&mut self, embeddings: &[Embedding]) -> Result<(), ApiError> {
+        let n = embeddings.len();
         if n == 0 {
             return Err(ApiError::InternalError("No concepts to layout".to_string()));
         }
 
-        self.positions = self.initialize_random_positions(n);
+        // Use PCA to initialize positions from embedding space (deterministic)
+        self.positions = self.initialize_pca_positions(embeddings)?;
+
+        let convergence_threshold = 0.001;
 
         for iteration in 0..self.force_params.iterations {
-            self.apply_physics_step();
+            let total_energy = self.apply_physics_step();
 
             if iteration % 50 == 0 {
                 info!(
-                    "Force-directed iteration: {}/{}",
-                    iteration, self.force_params.iterations
+                    "Force-directed iteration: {}/{} (energy: {:.4})",
+                    iteration, self.force_params.iterations, total_energy
                 );
+            }
+
+            // Early termination if system has converged
+            if total_energy < convergence_threshold {
+                info!(
+                    "Force layout converged at iteration {} (energy: {:.6})",
+                    iteration, total_energy
+                );
+                break;
             }
         }
 
@@ -254,14 +268,22 @@ impl MindMapProcessor {
 
     fn build_concept_groups(
         &mut self,
-        merged_groups: &[(Vec<String>, Embedding, Vec<f32>)],
+        merged_groups: &[(Vec<String>, Embedding, Vec<f32>, usize)],
     ) {
         self.concept_groups.clear();
 
         info!("Building concept groups: {} merged groups, {} positions",
               merged_groups.len(), self.positions.len());
 
-        for (i, (concepts, _, importances)) in merged_groups.iter().enumerate() {
+        // Remap root IDs to compact sequential group IDs
+        let unique_roots: Vec<usize> = {
+            let mut roots: Vec<usize> = merged_groups.iter().map(|(_, _, _, root)| *root).collect();
+            roots.sort();
+            roots.dedup();
+            roots
+        };
+
+        for (i, (concepts, _, importances, root)) in merged_groups.iter().enumerate() {
             if i >= self.positions.len() {
                 log::error!("Position index {} out of bounds for positions array of length {}",
                            i, self.positions.len());
@@ -270,12 +292,14 @@ impl MindMapProcessor {
 
             let connections = self.find_connections(i);
             let importance_score = self.calculate_importance(i, concepts, importances);
+            let group_id = unique_roots.iter().position(|r| r == root).unwrap_or(0);
 
             self.concept_groups.push(ConceptGroup {
                 concepts: concepts.clone(),
                 reduced_embedding: self.positions[i].to_vec(),
                 connections,
                 importance_score,
+                group_id,
             });
         }
 
@@ -313,28 +337,83 @@ impl MindMapProcessor {
     }
 
     // Physics helper methods
-    fn initialize_random_positions(&self, n: usize) -> Vec<[f32; 3]> {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
+    fn initialize_pca_positions(&self, embeddings: &[Embedding]) -> Result<Vec<[f32; 3]>, ApiError> {
+        use linfa::traits::Fit;
+        use linfa::traits::Predict;
+        use linfa::DatasetBase;
+        use ndarray::Array2 as Array2_64;
 
-        (0..n)
-            .map(|_| {
-                [
-                    rng.gen_range(-5.0..5.0),
-                    rng.gen_range(-5.0..5.0),
-                    rng.gen_range(-5.0..5.0),
-                ]
+        let n = embeddings.len();
+        if n == 0 {
+            return Err(ApiError::InternalError("No embeddings for PCA".to_string()));
+        }
+
+        // Handle degenerate case: 1-2 embeddings can't do meaningful PCA
+        if n <= 2 {
+            let mut positions = Vec::with_capacity(n);
+            for i in 0..n {
+                positions.push([(i as f32) * 3.0 - 1.5, 0.0, 0.0]);
+            }
+            return Ok(positions);
+        }
+
+        let dim = embeddings[0].len();
+
+        // linfa PCA requires f64, convert from f32 embeddings
+        let flat: Vec<f64> = embeddings.iter().flat_map(|e| e.iter().map(|&v| v as f64)).collect();
+        let matrix = Array2_64::<f64>::from_shape_vec((n, dim), flat).map_err(|e| {
+            ApiError::InternalError(format!("Failed to build embedding matrix: {}", e))
+        })?;
+
+        let dataset = DatasetBase::from(matrix);
+
+        // PCA to 3 components
+        let pca = Pca::params(3).fit(&dataset).map_err(|e| {
+            ApiError::InternalError(format!("PCA fitting failed: {}", e))
+        })?;
+
+        let projected = pca.predict(&dataset);
+
+        // Scale to [-5, 5] range
+        let mut min_vals = [f64::MAX; 3];
+        let mut max_vals = [f64::MIN; 3];
+        for row in projected.rows() {
+            for (d, &val) in row.iter().enumerate() {
+                if d < 3 {
+                    min_vals[d] = min_vals[d].min(val);
+                    max_vals[d] = max_vals[d].max(val);
+                }
+            }
+        }
+
+        let positions: Vec<[f32; 3]> = projected
+            .rows()
+            .into_iter()
+            .map(|row| {
+                let mut pos = [0.0f32; 3];
+                for d in 0..3 {
+                    let range = max_vals[d] - min_vals[d];
+                    if range > 1e-6 {
+                        pos[d] = ((row[d] - min_vals[d]) / range * 10.0 - 5.0) as f32;
+                    }
+                }
+                pos
             })
-            .collect()
+            .collect();
+
+        info!("PCA initialized {} positions in 3D space", positions.len());
+        Ok(positions)
     }
 
-    fn apply_physics_step(&mut self) {
+    /// Returns total kinetic energy for convergence detection
+    fn apply_physics_step(&mut self) -> f32 {
         let mut new_positions = self.positions.clone();
+        let mut total_energy = 0.0f32;
 
         for i in 0..self.positions.len() {
             let mut velocity = [0.0; 3];
 
-            // Attraction forces
+            // Attraction forces (continuous similarity as weight)
             for j in 0..self.positions.len() {
                 if i != j && self.similarity_matrix[i][j] > 0.0 {
                     let direction =
@@ -345,21 +424,19 @@ impl MindMapProcessor {
                 }
             }
 
-            // Repulsion forces
+            // Universal repulsion forces (all pairs, inverse-square)
             for j in 0..self.positions.len() {
                 if i != j {
                     let distance = self.calculate_distance(self.positions[i], self.positions[j]);
-                    if distance < self.force_params.min_distance {
-                        let direction =
-                            self.subtract_and_normalize(self.positions[i], self.positions[j]);
-                        let force =
-                            self.force_params.repulsion_strength / (distance * distance + 0.01);
-                        velocity = self.add_scaled(velocity, direction, force);
-                    }
+                    let direction =
+                        self.subtract_and_normalize(self.positions[i], self.positions[j]);
+                    let force =
+                        self.force_params.repulsion_strength / (distance * distance + 0.01);
+                    velocity = self.add_scaled(velocity, direction, force);
                 }
             }
 
-            // Center gravity
+            // Center gravity (weak, prevents drift)
             let to_center = self.scale_vector(self.positions[i], -self.force_params.center_gravity);
             velocity = self.add_vectors(velocity, to_center);
 
@@ -367,10 +444,14 @@ impl MindMapProcessor {
             velocity = self.scale_vector(velocity, self.force_params.damping);
             velocity = self.clamp_magnitude(velocity, self.force_params.max_velocity);
 
+            // Track kinetic energy for convergence
+            total_energy += velocity[0] * velocity[0] + velocity[1] * velocity[1] + velocity[2] * velocity[2];
+
             new_positions[i] = self.add_vectors(self.positions[i], velocity);
         }
 
         self.positions = new_positions;
+        total_energy
     }
 
     fn cosine_similarity(&self, a: ArrayView1<f32>, b: ArrayView1<f32>) -> f32 {

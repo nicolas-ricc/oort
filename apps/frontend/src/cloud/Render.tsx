@@ -175,6 +175,7 @@ function Render({
     >
       <PerspectiveCamera
         makeDefault
+        fov={75}
         position={calculateCameraPosition(positions).position}
         near={0.5}
         far={1000}

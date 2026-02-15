@@ -128,10 +128,12 @@ This constant controls all 3D positioning: planet distances, camera position, co
 
 ## 3D Coordinate System
 
-- Embeddings from backend are 3D coordinates from PCA reduction
-- Coordinates are scaled by `SCENE_SCALE` for rendering
-- `avoidCollisions()` in Scene.tsx pushes overlapping planets apart
-- Planet radius is 1 unit, minimum safe distance is `(4 + 2) * SCENE_SCALE`
+- Backend generates 3D coordinates via PCA initialization + force-directed layout refinement
+- Coordinates are scaled by `SCENE_SCALE` at render time only (via `safeParseEmbedding()`)
+- `avoidCollisions()` in Scene.tsx works in raw (unscaled) coordinates to prevent double-scaling
+- Multi-pass collision avoidance (up to 5 passes) resolves cascading overlaps
+- Planet radius is 1 unit, minimum safe distance is `4 + 2` (in raw coords)
+- Labels use `<Billboard>` from drei to always face the camera
 
 ## Post-Processing (EffectComposer)
 

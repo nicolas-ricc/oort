@@ -377,6 +377,7 @@ mod tests {
                 reduced_embedding: vec![1.0, 2.0, 3.0],
                 connections: vec![1, 2],
                 importance_score: 0.85,
+                group_id: 0,
             };
 
             let json = serde_json::to_string(&group).unwrap();
@@ -430,12 +431,14 @@ mod tests {
                     reduced_embedding: vec![0.5, -0.3, 0.8],
                     connections: vec![1],
                     importance_score: 1.5,
+                    group_id: 0,
                 },
                 ConceptGroup {
                     concepts: vec!["machine learning".to_string()],
                     reduced_embedding: vec![-0.2, 0.7, 0.1],
                     connections: vec![0],
                     importance_score: 1.2,
+                    group_id: 0,
                 },
             ];
 

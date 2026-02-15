@@ -28,49 +28,62 @@ function avoidCollisions(nodes: any[], minDistance = 4) {
         return isValid;
     });
 
-    const adjustedNodes = [...validNodes];
+    const adjustedNodes = validNodes.map(node => ({
+        ...node,
+        reduced_embedding: [...node.reduced_embedding]
+    }));
+
+    // Work in raw (unscaled) coordinates to avoid double-scaling
     const planetRadius = 1;
-    const safeDistance = (minDistance + planetRadius * 2) * SCENE_SCALE;
+    const safeDistance = minDistance + planetRadius * 2;
+    const maxPasses = 5;
 
-    for (let i = 0; i < adjustedNodes.length; i++) {
-        for (let j = i + 1; j < adjustedNodes.length; j++) {
-            const pos1 = safeParseEmbedding(adjustedNodes[i].reduced_embedding, SCENE_SCALE);
-            const pos2 = safeParseEmbedding(adjustedNodes[j].reduced_embedding, SCENE_SCALE);
+    for (let pass = 0; pass < maxPasses; pass++) {
+        let hadCollision = false;
 
-            const distance = Math.sqrt(
-                Math.pow(pos1[0] - pos2[0], 2) +
-                Math.pow(pos1[1] - pos2[1], 2) +
-                Math.pow(pos1[2] - pos2[2], 2)
-            );
+        for (let i = 0; i < adjustedNodes.length; i++) {
+            for (let j = i + 1; j < adjustedNodes.length; j++) {
+                const pos1 = adjustedNodes[i].reduced_embedding;
+                const pos2 = adjustedNodes[j].reduced_embedding;
 
-            if (distance < safeDistance) {
-                const direction = [
-                    pos2[0] - pos1[0],
-                    pos2[1] - pos1[1],
-                    pos2[2] - pos1[2]
-                ];
-                const length = Math.sqrt(direction[0] ** 2 + direction[1] ** 2 + direction[2] ** 2);
-                const normalized = direction.map(d => d / length);
+                const distance = Math.sqrt(
+                    Math.pow(pos1[0] - pos2[0], 2) +
+                    Math.pow(pos1[1] - pos2[1], 2) +
+                    Math.pow(pos1[2] - pos2[2], 2)
+                );
 
-                const pushDistance = (safeDistance - distance) / 2;
+                if (distance < safeDistance) {
+                    hadCollision = true;
+                    const direction = [
+                        pos2[0] - pos1[0],
+                        pos2[1] - pos1[1],
+                        pos2[2] - pos1[2]
+                    ];
+                    const length = Math.sqrt(direction[0] ** 2 + direction[1] ** 2 + direction[2] ** 2);
+                    const normalized = length > 0.0001
+                        ? direction.map(d => d / length)
+                        : [1, 0, 0]; // fallback for coincident points
 
-                const newPos1 = [
-                    pos1[0] - normalized[0] * pushDistance,
-                    pos1[1] - normalized[1] * pushDistance,
-                    pos1[2] - normalized[2] * pushDistance
-                ];
+                    const pushDistance = (safeDistance - distance) / 2;
 
-                const newPos2 = [
-                    pos2[0] + normalized[0] * pushDistance,
-                    pos2[1] + normalized[1] * pushDistance,
-                    pos2[2] + normalized[2] * pushDistance
-                ];
+                    adjustedNodes[i].reduced_embedding = [
+                        pos1[0] - normalized[0] * pushDistance,
+                        pos1[1] - normalized[1] * pushDistance,
+                        pos1[2] - normalized[2] * pushDistance
+                    ].map(val => isNaN(val) ? 0 : val);
 
-                adjustedNodes[i].reduced_embedding = newPos1.map(val => isNaN(val) ? 0 : val);
-                adjustedNodes[j].reduced_embedding = newPos2.map(val => isNaN(val) ? 0 : val);
+                    adjustedNodes[j].reduced_embedding = [
+                        pos2[0] + normalized[0] * pushDistance,
+                        pos2[1] + normalized[1] * pushDistance,
+                        pos2[2] + normalized[2] * pushDistance
+                    ].map(val => isNaN(val) ? 0 : val);
+                }
             }
         }
+
+        if (!hadCollision) break;
     }
+
     return adjustedNodes;
 }
 
@@ -297,14 +310,16 @@ export function Scene({
         return avoidCollisions(uniqueNodes);
     }, [nodes]);
 
+    // Stable key for a node, independent of position
+    const getNodeKey = useCallback((node: any): string => {
+        return node.concepts?.slice().sort().join("|") ?? "";
+    }, []);
+
     // Find active node position
     const activeNodePosition = useMemo(() => {
-        const activeNodeData = adjustedNodes.find((n: any) => {
-            const activeKey = safeParseEmbedding(n.reduced_embedding, SCENE_SCALE).map(String).join("-");
-            return activeKey === activeNode;
-        });
+        const activeNodeData = adjustedNodes.find((n: any) => getNodeKey(n) === activeNode);
         return activeNodeData ? safeParseEmbedding(activeNodeData.reduced_embedding, SCENE_SCALE) : null;
-    }, [adjustedNodes, activeNode]);
+    }, [adjustedNodes, activeNode, getNodeKey]);
 
     // Project active node position to screen coordinates
     useFrame(() => {
@@ -393,14 +408,14 @@ export function Scene({
             {/* Planets */}
             {adjustedNodes.map((node: any, idx: number) => {
                 const safeEmbedding = safeParseEmbedding(node.reduced_embedding, SCENE_SCALE);
-                const keyString = safeEmbedding.map(String).join("-");
+                const keyString = getNodeKey(node);
                 const isSelected = activeNode === keyString;
                 const conceptDistance = 8 * SCENE_SCALE;
                 const isNearActive = activeNodePosition ?
                     calculateDistance(safeEmbedding, activeNodePosition) <= conceptDistance : false;
                 const shouldShowConcepts = isSelected || isNearActive;
                 const textureIndex = getTextureIndexForPlanet(safeEmbedding, textures.length);
-                const clusterIndex = idx;
+                const clusterIndex = node.group_id ?? idx;
 
                 return (
                     <Fragment key={`${keyString}-${idx}`}>
