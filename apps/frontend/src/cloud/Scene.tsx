@@ -400,6 +400,30 @@ export function Scene({
     }, [adjustedNodes]);
 
 
+    // Proximity-based color clustering: close planets share atmosphere color
+    const colorIndexMap = useMemo(() => {
+        const points = adjustedNodes.map((node: any) => ({
+            position: safeParseEmbedding(node.reduced_embedding, SCENE_SCALE),
+            node
+        }));
+
+        const colorEpsilon = 7.5 * SCENE_SCALE;
+        const { clusters, noise } = dbscan3D(points, colorEpsilon, 2);
+
+        const map = new Map<number, number>();
+        clusters.forEach((cluster, clusterIdx) => {
+            cluster.forEach(pointIdx => {
+                map.set(pointIdx, clusterIdx);
+            });
+        });
+        let noiseOffset = clusters.length;
+        noise.forEach(pointIdx => {
+            map.set(pointIdx, noiseOffset++);
+        });
+
+        return map;
+    }, [adjustedNodes]);
+
     return (
         <>
             <AmbientLighting />
@@ -415,7 +439,7 @@ export function Scene({
                     calculateDistance(safeEmbedding, activeNodePosition) <= conceptDistance : false;
                 const shouldShowConcepts = isSelected || isNearActive;
                 const textureIndex = getTextureIndexForPlanet(safeEmbedding, textures.length);
-                const clusterIndex = node.group_id ?? idx;
+                const clusterIndex = colorIndexMap.get(idx) ?? idx;
 
                 return (
                     <Fragment key={`${keyString}-${idx}`}>

@@ -8,4 +8,6 @@ import aerial8 from "./aerial8.jpg";
 import aerial9 from "./aerial9.jpg";
 import aerial10 from "./aerial10.jpg";
 import aerial11 from "./aerial11.jpg";
-export const textures = [aerial2, aerial3, aerial4, aerial5, aerial6, aerial7, aerial8, aerial9, aerial10, aerial11] as string[];
+import aerial12Lava from "./aerial12-lava.png";
+import aerial13Lava from "./aerial13-lava.png";
+export const textures = [aerial2, aerial3, aerial4, aerial5, aerial6, aerial7, aerial8, aerial9, aerial10, aerial11, aerial12Lava, aerial13Lava] as string[];
