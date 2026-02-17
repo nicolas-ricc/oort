@@ -198,6 +198,11 @@ function calculateClusterLighting(clusters: number[][], points: { position: numb
     }).filter((c): c is NonNullable<typeof c> => c !== null);
 }
 
+export type ColorClusterInfo = {
+    clusterIndex: number;
+    nearbyConcepts: string[][];
+};
+
 type SceneProps = {
     nodes: any[];
     activeNode: string;
@@ -209,6 +214,7 @@ type SceneProps = {
     onNavigateToIndex?: (index: number) => void;
     onCameraTargetChange?: (target: { position: number[]; lookAt: number[] } | null) => void;
     screenPositionRef?: MutableRefObject<{ x: number; y: number } | null>;
+    onColorClusterInfo?: (info: ColorClusterInfo | null) => void;
 };
 
 export function Scene({
@@ -221,7 +227,8 @@ export function Scene({
     onResetToOverview,
     onNavigateToIndex,
     onCameraTargetChange,
-    screenPositionRef
+    screenPositionRef,
+    onColorClusterInfo
 }: SceneProps) {
     const { gl, camera } = useThree();
 
@@ -407,7 +414,7 @@ export function Scene({
             node
         }));
 
-        const colorEpsilon = 7.5 * SCENE_SCALE;
+        const colorEpsilon = 5 * SCENE_SCALE;
         const { clusters, noise } = dbscan3D(points, colorEpsilon, 2);
 
         const map = new Map<number, number>();
@@ -423,6 +430,52 @@ export function Scene({
 
         return map;
     }, [adjustedNodes]);
+
+    // Report DBSCAN color cluster info for the active node
+    useEffect(() => {
+        if (!activeNode || !onColorClusterInfo) {
+            onColorClusterInfo?.(null);
+            return;
+        }
+
+        const activeIdx = adjustedNodes.findIndex((n: any) => getNodeKey(n) === activeNode);
+        if (activeIdx === -1) {
+            onColorClusterInfo(null);
+            return;
+        }
+
+        const clusterIndex = colorIndexMap.get(activeIdx) ?? activeIdx;
+
+        const nearbyConcepts: string[][] = [];
+        adjustedNodes.forEach((node: any, idx: number) => {
+            if (idx !== activeIdx && colorIndexMap.get(idx) === clusterIndex) {
+                nearbyConcepts.push(node.concepts ?? []);
+            }
+        });
+
+        // Spatial proximity fallback for noise/isolated nodes
+        if (nearbyConcepts.length === 0) {
+            const activePos = safeParseEmbedding(adjustedNodes[activeIdx].reduced_embedding, SCENE_SCALE);
+            const proximityThreshold = 8 * SCENE_SCALE;
+
+            const nearby = adjustedNodes
+                .map((node: any, idx: number) => ({
+                    idx,
+                    concepts: node.concepts ?? [],
+                    distance: calculateDistance(
+                        activePos,
+                        safeParseEmbedding(node.reduced_embedding, SCENE_SCALE)
+                    ),
+                }))
+                .filter((entry) => entry.idx !== activeIdx && entry.distance <= proximityThreshold)
+                .sort((a, b) => a.distance - b.distance)
+                .slice(0, 5);
+
+            nearby.forEach((entry) => nearbyConcepts.push(entry.concepts));
+        }
+
+        onColorClusterInfo({ clusterIndex, nearbyConcepts });
+    }, [activeNode, adjustedNodes, colorIndexMap, getNodeKey, onColorClusterInfo]);
 
     return (
         <>

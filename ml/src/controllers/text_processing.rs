@@ -6,7 +6,7 @@ use uuid::Uuid;
 use crate::data::cdn::github::GitHubCDN;
 use crate::data::client::{DatabaseClient, TextReference};
 use crate::data::scraper::{ArticleScraper, derive_filename};
-use crate::dimensionality;
+use crate::dimensionality::{self, ConceptGroup};
 use crate::error::ApiError;
 use crate::models::concepts::KeywordExtractor;
 
@@ -227,29 +227,33 @@ pub async fn process_text(
     };
     let filename_for_cdn = filename.clone();
     let user_id_for_cdn = data.user_id.clone();
+    let source_url_for_cdn = source_url.unwrap_or_default();
     let all_concept_strings: Vec<String> = all_concepts.iter().map(|c| c.concept.clone()).collect();
     let db_client_cdn = Arc::clone(&state.db_client);
 
     tokio::spawn(async move {
+        if let Some(user_id) = &user_id_for_cdn {
+            let normalized_user_id = if user_id == "default" {
+                "550e8400-e29b-41d4-a716-446655440000".to_string()
+            } else {
+                user_id.clone()
+            };
+            let file_size = text_for_cdn.len() as i32;
+            if let Err(e) = db_client_cdn.save_text_reference(
+                &normalized_user_id,
+                &filename_for_cdn,
+                "",
+                &source_url_for_cdn,
+                &all_concept_strings,
+                Some(file_size),
+            ).await {
+                error!("Failed to save text reference: {:?}", e);
+            }
+        }
+
         match GitHubCDN::new().upload_text(&text_for_cdn, &filename_for_cdn).await {
             Ok(cdn_url) => {
-                if let Some(user_id) = &user_id_for_cdn {
-                    let normalized_user_id = if user_id == "default" {
-                        "550e8400-e29b-41d4-a716-446655440000".to_string()
-                    } else {
-                        user_id.clone()
-                    };
-                    let file_size = text_for_cdn.len() as i32;
-                    if let Err(e) = db_client_cdn.save_text_reference(
-                        &normalized_user_id,
-                        &filename_for_cdn,
-                        &cdn_url,
-                        &all_concept_strings,
-                        Some(file_size),
-                    ).await {
-                        error!("Failed to save text reference: {:?}", e);
-                    }
-                }
+                info!("CDN upload succeeded: {}", cdn_url);
             }
             Err(e) => {
                 error!("CDN upload failed (non-fatal): {:?}", e);
@@ -286,6 +290,63 @@ pub async fn get_texts_by_concept(
     let response = ApiResponse {
         success: true,
         data: text_references,
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SaveSceneInput {
+    pub scene_data: Vec<ConceptGroup>,
+    pub scene_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SaveSceneResponse {
+    pub scene_id: String,
+}
+
+pub async fn save_scene(
+    data: web::Json<SaveSceneInput>,
+    state: web::Data<AppState>,
+) -> Result<impl Responder, ApiError> {
+    let scene_data_json = serde_json::to_string(&data.scene_data)
+        .map_err(|e| ApiError::InternalError(format!("JSON serialization error: {}", e)))?;
+
+    let scene_id = if let Some(existing_id) = &data.scene_id {
+        info!("Updating existing scene: {}", existing_id);
+        state.db_client.update_scene(existing_id, &scene_data_json).await?;
+        existing_id.clone()
+    } else {
+        let new_id = nanoid::nanoid!(10);
+        info!("Creating new scene: {}", new_id);
+        state.db_client.save_scene(&new_id, &scene_data_json).await?;
+        new_id
+    };
+
+    let response = ApiResponse {
+        success: true,
+        data: SaveSceneResponse { scene_id },
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+pub async fn get_scene(
+    path: web::Path<String>,
+    state: web::Data<AppState>,
+) -> Result<impl Responder, ApiError> {
+    let scene_id = path.into_inner();
+    info!("Loading scene: {}", scene_id);
+
+    let scene_data_json = state.db_client.get_scene(&scene_id).await?;
+
+    let scene_data: Vec<ConceptGroup> = serde_json::from_str(&scene_data_json)
+        .map_err(|e| ApiError::InternalError(format!("JSON deserialization error: {}", e)))?;
+
+    let response = ApiResponse {
+        success: true,
+        data: scene_data,
     };
 
     Ok(HttpResponse::Ok().json(response))
@@ -392,12 +453,76 @@ mod tests {
         }
 
         #[test]
+        fn test_save_scene_input_deserialization_new() {
+            let json = r#"{"scene_data": [{"concepts": ["ai"], "reduced_embedding": [1.0, 2.0, 3.0], "connections": [1], "importance_score": 0.5, "group_id": 0}]}"#;
+            let input: SaveSceneInput = serde_json::from_str(json).unwrap();
+
+            assert!(input.scene_id.is_none());
+            assert_eq!(input.scene_data.len(), 1);
+            assert_eq!(input.scene_data[0].concepts[0], "ai");
+        }
+
+        #[test]
+        fn test_save_scene_input_deserialization_update() {
+            let json = r#"{"scene_data": [{"concepts": ["ai"], "reduced_embedding": [1.0, 2.0, 3.0], "connections": [], "importance_score": 0.5, "group_id": 0}], "scene_id": "xK9bQ4mR2p"}"#;
+            let input: SaveSceneInput = serde_json::from_str(json).unwrap();
+
+            assert_eq!(input.scene_id, Some("xK9bQ4mR2p".to_string()));
+            assert_eq!(input.scene_data.len(), 1);
+        }
+
+        #[test]
+        fn test_save_scene_response_serialization() {
+            let response = ApiResponse {
+                success: true,
+                data: SaveSceneResponse {
+                    scene_id: "xK9bQ4mR2p".to_string(),
+                },
+            };
+
+            let json = serde_json::to_string(&response).unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(parsed["success"], true);
+            assert_eq!(parsed["data"]["scene_id"], "xK9bQ4mR2p");
+        }
+
+        #[test]
+        fn test_scene_data_roundtrip() {
+            let groups = vec![
+                ConceptGroup {
+                    concepts: vec!["artificial intelligence".to_string(), "AI".to_string()],
+                    reduced_embedding: vec![0.5, -0.3, 0.8],
+                    connections: vec![1],
+                    importance_score: 1.5,
+                    group_id: 0,
+                },
+                ConceptGroup {
+                    concepts: vec!["machine learning".to_string()],
+                    reduced_embedding: vec![-0.2, 0.7, 0.1],
+                    connections: vec![0],
+                    importance_score: 1.2,
+                    group_id: 1,
+                },
+            ];
+
+            let json = serde_json::to_string(&groups).unwrap();
+            let deserialized: Vec<ConceptGroup> = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(deserialized.len(), 2);
+            assert_eq!(deserialized[0].concepts, groups[0].concepts);
+            assert_eq!(deserialized[0].reduced_embedding, groups[0].reduced_embedding);
+            assert_eq!(deserialized[1].group_id, 1);
+        }
+
+        #[test]
         fn test_text_reference_serialization() {
             let text_ref = TextReference {
                 text_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440001").unwrap(),
                 user_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
                 filename: "test.txt".to_string(),
                 url: "https://example.com/test.txt".to_string(),
+                source_url: "https://original-article.com/post".to_string(),
                 concepts: vec!["concept1".to_string()],
                 upload_timestamp: Utc::now(),
                 file_size: Some(1024),
@@ -410,6 +535,7 @@ mod tests {
             assert!(parsed["user_id"].is_string());
             assert_eq!(parsed["filename"], "test.txt");
             assert_eq!(parsed["url"], "https://example.com/test.txt");
+            assert_eq!(parsed["source_url"], "https://original-article.com/post");
             assert!(parsed["concepts"].is_array());
             assert!(parsed["upload_timestamp"].is_string());
             assert_eq!(parsed["file_size"], 1024);
@@ -420,7 +546,7 @@ mod tests {
 
     mod endpoint_tests {
         use super::*;
-        use actix_web::{test, web, App, HttpResponse};
+        use actix_web::{test, web, App, HttpResponse, ResponseError};
 
         async fn mock_vectorize_handler(
             _data: web::Json<TextInput>,
@@ -459,6 +585,7 @@ mod tests {
                     user_id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
                     filename: "document.txt".to_string(),
                     url: "https://cdn.example.com/document.txt".to_string(),
+                    source_url: "https://example.com/article".to_string(),
                     concepts: vec!["machine learning".to_string()],
                     upload_timestamp: Utc::now(),
                     file_size: Some(2048),
@@ -562,6 +689,141 @@ mod tests {
             assert!(first_ref["url"].is_string());
             assert!(first_ref["concepts"].is_array());
             assert!(first_ref["upload_timestamp"].is_string());
+        }
+
+        async fn mock_save_scene_handler(
+            data: web::Json<SaveSceneInput>,
+        ) -> HttpResponse {
+            let scene_id = data.scene_id.clone().unwrap_or_else(|| "newScene123".to_string());
+
+            let response = ApiResponse {
+                success: true,
+                data: SaveSceneResponse { scene_id },
+            };
+
+            HttpResponse::Ok().json(response)
+        }
+
+        async fn mock_get_scene_handler(
+            _path: web::Path<String>,
+        ) -> HttpResponse {
+            let mock_groups = vec![
+                ConceptGroup {
+                    concepts: vec!["artificial intelligence".to_string()],
+                    reduced_embedding: vec![0.5, -0.3, 0.8],
+                    connections: vec![1],
+                    importance_score: 1.5,
+                    group_id: 0,
+                },
+            ];
+
+            let response = ApiResponse {
+                success: true,
+                data: mock_groups,
+            };
+
+            HttpResponse::Ok().json(response)
+        }
+
+        async fn mock_get_scene_not_found_handler(
+            path: web::Path<String>,
+        ) -> HttpResponse {
+            let scene_id = path.into_inner();
+            ApiError::SceneNotFound(scene_id).error_response()
+        }
+
+        #[actix_web::test]
+        async fn test_save_scene_new() {
+            let app = test::init_service(
+                App::new().route("/api/scenes", web::post().to(mock_save_scene_handler))
+            ).await;
+
+            let req = test::TestRequest::post()
+                .uri("/api/scenes")
+                .set_json(serde_json::json!({
+                    "scene_data": [{
+                        "concepts": ["ai"],
+                        "reduced_embedding": [1.0, 2.0, 3.0],
+                        "connections": [1],
+                        "importance_score": 0.5,
+                        "group_id": 0
+                    }]
+                }))
+                .to_request();
+
+            let resp = test::call_service(&app, req).await;
+            assert!(resp.status().is_success());
+
+            let body: serde_json::Value = test::read_body_json(resp).await;
+            assert_eq!(body["success"], true);
+            assert!(body["data"]["scene_id"].is_string());
+        }
+
+        #[actix_web::test]
+        async fn test_save_scene_update() {
+            let app = test::init_service(
+                App::new().route("/api/scenes", web::post().to(mock_save_scene_handler))
+            ).await;
+
+            let req = test::TestRequest::post()
+                .uri("/api/scenes")
+                .set_json(serde_json::json!({
+                    "scene_data": [{
+                        "concepts": ["ai"],
+                        "reduced_embedding": [1.0, 2.0, 3.0],
+                        "connections": [],
+                        "importance_score": 0.5,
+                        "group_id": 0
+                    }],
+                    "scene_id": "existingId1"
+                }))
+                .to_request();
+
+            let resp = test::call_service(&app, req).await;
+            assert!(resp.status().is_success());
+
+            let body: serde_json::Value = test::read_body_json(resp).await;
+            assert_eq!(body["data"]["scene_id"], "existingId1");
+        }
+
+        #[actix_web::test]
+        async fn test_get_scene_success() {
+            let app = test::init_service(
+                App::new().route("/api/scenes/{scene_id}", web::get().to(mock_get_scene_handler))
+            ).await;
+
+            let req = test::TestRequest::get()
+                .uri("/api/scenes/testScene1")
+                .to_request();
+
+            let resp = test::call_service(&app, req).await;
+            assert!(resp.status().is_success());
+
+            let body: serde_json::Value = test::read_body_json(resp).await;
+            assert_eq!(body["success"], true);
+            assert!(body["data"].is_array());
+            assert!(!body["data"].as_array().unwrap().is_empty());
+
+            let first_group = &body["data"][0];
+            assert!(first_group["concepts"].is_array());
+            assert!(first_group["reduced_embedding"].is_array());
+        }
+
+        #[actix_web::test]
+        async fn test_get_scene_not_found() {
+            let app = test::init_service(
+                App::new().route("/api/scenes/{scene_id}", web::get().to(mock_get_scene_not_found_handler))
+            ).await;
+
+            let req = test::TestRequest::get()
+                .uri("/api/scenes/nonexistent")
+                .to_request();
+
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), 404);
+
+            let body: serde_json::Value = test::read_body_json(resp).await;
+            assert_eq!(body["success"], false);
         }
 
         #[actix_web::test]

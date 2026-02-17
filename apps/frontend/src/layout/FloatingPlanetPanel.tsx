@@ -1,4 +1,4 @@
-import { MutableRefObject, useCallback, useEffect, useRef, useState } from "react"
+import { MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { X, ExternalLink, Circle } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { ConceptCluster } from "@/App"
@@ -9,6 +9,7 @@ type TextReference = {
     user_id: string;
     filename: string;
     url: string;
+    source_url: string;
     concepts: string[];
     upload_timestamp: string;
     file_size?: number;
@@ -17,6 +18,7 @@ type TextReference = {
 type FloatingPlanetPanelProps = {
     selectedCluster: ConceptCluster | null;
     clusterIndex: number;
+    nearbyConcepts: string[][];
     screenPositionRef: MutableRefObject<{ x: number; y: number } | null>;
     isAnimating: boolean;
     onClose: () => void;
@@ -30,6 +32,7 @@ const OFFSET_X = 30;
 export function FloatingPlanetPanel({
     selectedCluster,
     clusterIndex,
+    nearbyConcepts,
     screenPositionRef,
     isAnimating,
     onClose
@@ -39,6 +42,7 @@ export function FloatingPlanetPanel({
     const visible = !isAnimating && selectedCluster !== null;
 
     const selectedConcept = selectedCluster?.concepts[0] || null;
+    const subConcepts = selectedCluster?.concepts.slice(1) ?? [];
 
     const { data: textReferences } = useQuery({
         queryKey: ['textReferences', selectedConcept],
@@ -55,6 +59,26 @@ export function FloatingPlanetPanel({
     });
 
     const atmosphereColor = getAtmosphereColor(clusterIndex);
+
+    // Deduplicate nearby concepts against this planet's concepts
+    const filteredNearbyConcepts = useMemo(() => {
+        const ownConcepts = new Set(selectedCluster?.concepts ?? []);
+        const seen = new Set<string>();
+        const result: string[] = [];
+        for (const group of nearbyConcepts) {
+            for (const c of group) {
+                if (!ownConcepts.has(c) && !seen.has(c)) {
+                    seen.add(c);
+                    result.push(c);
+                }
+            }
+        }
+        return result;
+    }, [nearbyConcepts, selectedCluster]);
+
+    const sourceRefs = useMemo(() => {
+        return textReferences ?? [];
+    }, [textReferences]);
 
     const updatePosition = useCallback(() => {
         const screenPos = screenPositionRef.current;
@@ -106,18 +130,18 @@ export function FloatingPlanetPanel({
                 opacity: visible ? 1 : 0,
             }}
         >
-            <div className="bg-zinc-900/85 backdrop-blur-md border border-terminal-border/50 rounded-lg shadow-xl shadow-black/50 overflow-hidden flex flex-col" style={{ maxHeight: PANEL_MAX_HEIGHT }}>
+            <div className="bg-zinc-900/85 backdrop-blur-md border border-terminal-border/50 shadow-xl shadow-black/50 overflow-hidden flex flex-col" style={{ maxHeight: PANEL_MAX_HEIGHT }}>
                 {/* Header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-terminal-border/50">
-                    <div className="flex items-center gap-2">
-                        <Circle size={10} fill={atmosphereColor} color={atmosphereColor} />
-                        <span className="text-terminal-text text-sm font-medium truncate">
-                            {selectedCluster?.concepts[0] ?? "Planet"}
+                    <div className="flex items-center gap-2 min-w-0">
+                        <Circle size={10} fill={atmosphereColor} color={atmosphereColor} className="flex-shrink-0" />
+                        <span className="text-terminal-text text-sm font-medium truncate uppercase">
+                            {selectedConcept ?? "Planet"}
                         </span>
                     </div>
                     <button
                         onClick={onClose}
-                        className="text-terminal-muted hover:text-terminal-text transition-colors"
+                        className="text-terminal-muted hover:text-terminal-text transition-colors flex-shrink-0"
                     >
                         <X size={14} />
                     </button>
@@ -125,53 +149,70 @@ export function FloatingPlanetPanel({
 
                 {/* Scrollable content */}
                 <div className="overflow-y-auto flex-1 scrollbar scrollbar-w-1.5 scrollbar-thumb-terminal-border scrollbar-track-transparent">
-                    {/* Concepts */}
-                    {selectedCluster && (
-                        <div className="px-4 py-3">
-                            <h3 className="text-green-300 text-xs font-medium mb-2">
-                                Concepts ({selectedCluster.concepts.length})
-                            </h3>
-                            <ul className="space-y-1.5">
-                                {selectedCluster.concepts.map((concept, idx) => (
-                                    <li
-                                        key={concept}
-                                        className="flex items-start gap-2 text-terminal-text text-xs py-1.5 px-2.5 bg-zinc-800/50 rounded border border-zinc-700/50"
-                                    >
-                                        <span className="text-terminal-muted text-[10px] mt-0.5">{idx + 1}.</span>
-                                        <span>{concept}</span>
-                                    </li>
-                                ))}
-                            </ul>
+                    {/* Sub-concepts (skip first/primary) */}
+                    {subConcepts.length > 0 && (
+                        <div className="px-4 py-3 space-y-1">
+                            {subConcepts.map((concept) => (
+                                <div
+                                    key={concept}
+                                    className="text-terminal-text text-xs font-mono"
+                                >
+                                    <span className="text-terminal-muted">{'> '}</span>{concept}
+                                </div>
+                            ))}
                         </div>
                     )}
 
-                    {/* Source Texts */}
-                    {selectedConcept && textReferences && textReferences.length > 0 && (
+                    {/* Nearby concepts from same-color planets */}
+                    {filteredNearbyConcepts.length > 0 && (
                         <div className="border-t border-terminal-border/50">
-                            <div className="px-4 py-2 bg-zinc-800/50">
-                                <span className="text-green-300 text-xs">Source Texts</span>
+                            <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                                <span className="text-terminal-muted text-[10px] font-medium uppercase tracking-wider">NEARBY</span>
+                                <div className="flex-1 border-t border-terminal-border/30" />
                             </div>
-                            {textReferences.map((ref) => (
-                                <div
-                                    key={ref.text_id}
-                                    className="px-4 py-2 text-xs text-terminal-text hover:bg-zinc-800/50 transition-colors border-b border-zinc-800/30"
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <span className="truncate">{ref.filename}</span>
+                            <div className="px-4 pb-3 space-y-1">
+                                {filteredNearbyConcepts.map((concept) => (
+                                    <div
+                                        key={concept}
+                                        className="text-terminal-muted text-xs font-mono"
+                                    >
+                                        <span className="text-terminal-border">{'> '}</span>{concept}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Source references */}
+                    {sourceRefs.length > 0 && (
+                        <div className="border-t border-terminal-border/50">
+                            <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                                <span className="text-terminal-muted text-[10px] font-medium uppercase tracking-wider">SOURCES</span>
+                                <div className="flex-1 border-t border-terminal-border/30" />
+                            </div>
+                            <div className="px-4 pb-3 space-y-1">
+                                {sourceRefs.map((ref) =>
+                                    ref.source_url && ref.source_url.length > 0 ? (
                                         <a
-                                            href={ref.url}
+                                            key={ref.text_id}
+                                            href={ref.source_url}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-green-300 hover:text-green-400 ml-2 flex-shrink-0"
+                                            className="flex items-center gap-2 text-xs text-terminal-text hover:text-green-300 transition-colors"
                                         >
-                                            <ExternalLink size={11} />
+                                            <span className="truncate">{ref.filename}</span>
+                                            <ExternalLink size={11} className="flex-shrink-0 text-terminal-muted" />
                                         </a>
-                                    </div>
-                                    <div className="text-terminal-muted mt-0.5 text-[10px]">
-                                        {new Date(ref.upload_timestamp).toLocaleDateString()}
-                                    </div>
-                                </div>
-                            ))}
+                                    ) : (
+                                        <div
+                                            key={ref.text_id}
+                                            className="text-xs text-terminal-muted font-mono truncate"
+                                        >
+                                            {ref.filename}
+                                        </div>
+                                    )
+                                )}
+                            </div>
                         </div>
                     )}
                 </div>
