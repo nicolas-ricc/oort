@@ -1,24 +1,35 @@
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { cn } from "@/lib/utils"
-import { Upload, Link } from "lucide-react"
+import { Upload, Link, Save, Check } from "lucide-react"
 import { ConceptCluster, Simulation } from "@/App"
 import { useFileUpload } from "@/hooks/useFileUpload"
 import { useUrlUpload } from "@/hooks/useUrlUpload"
 import { useState } from "react"
 
-export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadingState }: {
+export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadingState, onSaveScene, isSaving, currentSceneId }: {
     concepts: Simulation,
     onSelect: (concept: string) => void,
     active: string,
     onSimulationUpdate: (data: any) => void,
-    setLoadingState: (loading: boolean) => void
+    setLoadingState: (loading: boolean) => void,
+    onSaveScene?: () => void,
+    isSaving?: boolean,
+    currentSceneId?: string | null,
 }) => {
     const { uploadFile, isPending } = useFileUpload({ onSimulationUpdate, setLoadingState })
     const { uploadUrl, isPending: isUrlPending } = useUrlUpload({ onSimulationUpdate, setLoadingState })
     const [showUrlInput, setShowUrlInput] = useState(false)
     const [urlValue, setUrlValue] = useState("")
+    const [showSaved, setShowSaved] = useState(false)
 
     const anyPending = isPending || isUrlPending
+
+    const handleSave = () => {
+        if (!onSaveScene || isSaving || concepts.length === 0) return;
+        onSaveScene();
+        setShowSaved(true);
+        setTimeout(() => setShowSaved(false), 2000);
+    }
 
     const handleUrlSubmit = () => {
         const trimmed = urlValue.trim()
@@ -64,6 +75,20 @@ export const Menu = ({ concepts, onSelect, active, onSimulationUpdate, setLoadin
                                     disabled={anyPending}
                                 />
                             </label>
+                            {onSaveScene && (
+                                <button
+                                    onClick={handleSave}
+                                    disabled={isSaving || concepts.length === 0}
+                                    className={`flex items-center justify-center w-10 h-10 rounded-md transition-colors ${
+                                        isSaving || concepts.length === 0
+                                            ? 'text-gray-500'
+                                            : 'text-terminal-text hover:text-green-300 hover:bg-zinc-800'
+                                    }`}
+                                    title={currentSceneId ? 'Update scene & copy link' : 'Save scene & copy link'}
+                                >
+                                    {showSaved ? <Check size={20} /> : <Save size={20} />}
+                                </button>
+                            )}
                         </div>
                     </div>
 

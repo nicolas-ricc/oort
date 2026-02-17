@@ -9,7 +9,7 @@ mod data;
 mod dimensionality;
 mod error;
 
-use crate::controllers::text_processing::{process_text, get_texts_by_concept, AppState};
+use crate::controllers::text_processing::{process_text, get_texts_by_concept, save_scene, get_scene, AppState};
 use crate::models::concepts::ConceptsModel;
 use crate::models::embeddings::EmbeddingModel;
 use crate::data::client::DatabaseClient;
@@ -82,6 +82,8 @@ async fn main() -> std::io::Result<()> {
             .route("/api/health", web::get().to(health))
             .route("/api/vectorize", web::post().to(process_text))
             .route("/api/texts-by-concept", web::get().to(get_texts_by_concept))
+            .route("/api/scenes", web::post().to(save_scene))
+            .route("/api/scenes/{scene_id}", web::get().to(get_scene))
     })
     .bind((host, port))?
     .run()

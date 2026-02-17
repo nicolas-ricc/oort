@@ -26,6 +26,7 @@ pub struct TextReference {
     pub user_id: Uuid,
     pub filename: String,
     pub url: String,
+    pub source_url: String,
     pub concepts: Vec<String>,
     pub upload_timestamp: DateTime<Utc>,
     pub file_size: Option<i32>,
@@ -216,6 +217,7 @@ impl DatabaseClient {
         user_id: &str,
         filename: &str,
         url: &str,
+        source_url: &str,
         concepts: &[String],
         file_size: Option<i32>,
     ) -> Result<Uuid, ApiError> {
@@ -223,13 +225,13 @@ impl DatabaseClient {
         let user_uuid = Uuid::parse_str(user_id)
             .map_err(|e| ApiError::InternalError(format!("Invalid UUID: {}", e)))?;
         let now = Utc::now();
-        
+
         let concepts_vec: Vec<String> = concepts.iter().cloned().collect();
 
         // Insert into text_references table
         let query = "INSERT INTO store.text_references \
-                    (text_id, user_id, filename, url, concepts, upload_timestamp, file_size) \
-                    VALUES (?, ?, ?, ?, ?, ?, ?)";
+                    (text_id, user_id, filename, url, source_url, concepts, upload_timestamp, file_size) \
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
         self.session
             .query_with_values(
@@ -239,6 +241,7 @@ impl DatabaseClient {
                     user_uuid,
                     filename,
                     url,
+                    source_url,
                     concepts_vec,
                     now,
                     file_size
@@ -250,8 +253,8 @@ impl DatabaseClient {
         // Insert into concept_text_mapping table for each concept
         for concept in concepts {
             let mapping_query = "INSERT INTO store.concept_text_mapping \
-                               (concept_text, user_id, text_id, filename, url, upload_timestamp) \
-                               VALUES (?, ?, ?, ?, ?, ?)";
+                               (concept_text, user_id, text_id, filename, url, source_url, upload_timestamp) \
+                               VALUES (?, ?, ?, ?, ?, ?, ?)";
 
             self.session
                 .query_with_values(
@@ -262,6 +265,7 @@ impl DatabaseClient {
                         text_id,
                         filename,
                         url,
+                        source_url,
                         now
                     ),
                 )
@@ -272,6 +276,81 @@ impl DatabaseClient {
         Ok(text_id)
     }
 
+    pub async fn save_scene(
+        &self,
+        scene_id: &str,
+        scene_data_json: &str,
+    ) -> Result<(), ApiError> {
+        let now = Utc::now();
+
+        let query = "INSERT INTO store.scenes \
+                    (scene_id, scene_data, created_at, updated_at) \
+                    VALUES (?, ?, ?, ?)";
+
+        self.session
+            .query_with_values(
+                query,
+                query_values!(
+                    scene_id.to_string(),
+                    scene_data_json.to_string(),
+                    now,
+                    now
+                ),
+            )
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Save scene error: {}", e)))?;
+
+        Ok(())
+    }
+
+    pub async fn get_scene(&self, scene_id: &str) -> Result<String, ApiError> {
+        let query = "SELECT scene_data FROM store.scenes WHERE scene_id = ?";
+
+        let rows = self
+            .session
+            .query_with_values(query, query_values!(scene_id.to_string()))
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Query error: {}", e)))?
+            .response_body()
+            .map_err(|e| ApiError::InternalError(format!("Response error: {}", e)))?
+            .into_rows()
+            .unwrap_or_default();
+
+        let row = rows.first().ok_or_else(|| {
+            ApiError::SceneNotFound(scene_id.to_string())
+        })?;
+
+        let scene_data: String = row.get_r_by_name("scene_data").map_err(|e| {
+            ApiError::InternalError(format!("Scene data extraction error: {}", e))
+        })?;
+
+        Ok(scene_data)
+    }
+
+    pub async fn update_scene(
+        &self,
+        scene_id: &str,
+        scene_data_json: &str,
+    ) -> Result<(), ApiError> {
+        let now = Utc::now();
+
+        let query = "UPDATE store.scenes SET scene_data = ?, updated_at = ? WHERE scene_id = ?";
+
+        self.session
+            .query_with_values(
+                query,
+                query_values!(
+                    scene_data_json.to_string(),
+                    now,
+                    scene_id.to_string()
+                ),
+            )
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Update scene error: {}", e)))?;
+
+        Ok(())
+    }
+
     pub async fn get_texts_by_concept(
         &self,
         user_id: &str,
@@ -280,7 +359,7 @@ impl DatabaseClient {
         let user_uuid = Uuid::parse_str(user_id)
             .map_err(|e| ApiError::InternalError(format!("Invalid UUID: {}", e)))?;
 
-        let query = "SELECT text_id, filename, url, upload_timestamp \
+        let query = "SELECT text_id, filename, url, source_url, upload_timestamp \
                     FROM store.concept_text_mapping \
                     WHERE concept_text = ? AND user_id = ?";
 
@@ -309,12 +388,12 @@ impl DatabaseClient {
                 ApiError::InternalError(format!("URL extraction error: {}", e))
             })?;
 
+            let source_url: String = row.get_r_by_name("source_url").unwrap_or_default();
+
             let upload_timestamp: DateTime<Utc> = row.get_r_by_name("upload_timestamp").map_err(|e| {
                 ApiError::InternalError(format!("Timestamp extraction error: {}", e))
             })?;
 
-            // For now, we'll just include the queried concept in the concepts list
-            // In a full implementation, you might want to fetch all concepts for this text
             let concepts = vec![concept.to_string()];
 
             results.push(TextReference {
@@ -322,9 +401,10 @@ impl DatabaseClient {
                 user_id: user_uuid,
                 filename,
                 url,
+                source_url,
                 concepts,
                 upload_timestamp,
-                file_size: None, // Not stored in mapping table
+                file_size: None,
             });
         }
 

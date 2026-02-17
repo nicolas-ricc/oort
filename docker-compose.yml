@@ -19,13 +19,13 @@ services: # New Backend Rust service
       start_period: 60s
 
   cassandra-init:
-    image: cassandra:latest
+    build:
+      context: ./db
+      dockerfile: Dockerfile
     depends_on:
       oort-db:
         condition: service_healthy
-    command: cqlsh oort-db -f /init/data.cql
-    volumes:
-      - ./db/data.cql:/init/data.cql
+    command: cqlsh oort-db -f /data.cql
 
   oort-ml:
     build:

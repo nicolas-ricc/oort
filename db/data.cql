@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS store.text_references (
     user_id UUID,
     filename TEXT,
     url TEXT,
+    source_url TEXT,
     concepts LIST<TEXT>,  -- List of concept strings contained in this text
     upload_timestamp TIMESTAMP,
     file_size INT
@@ -48,6 +49,15 @@ CREATE TABLE IF NOT EXISTS store.concept_text_mapping (
     text_id UUID,
     filename TEXT,
     url TEXT,
+    source_url TEXT,
     upload_timestamp TIMESTAMP,
     PRIMARY KEY ((concept_text, user_id), text_id)
 ) WITH CLUSTERING ORDER BY (text_id DESC);
+
+-- Scenes table for shareable scene persistence
+CREATE TABLE IF NOT EXISTS store.scenes (
+    scene_id TEXT PRIMARY KEY,
+    scene_data TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);

@@ -30,6 +30,9 @@ pub enum ApiError {
 
     #[error("Failed to extract content: {0}")]
     ContentExtractionError(String),
+
+    #[error("Scene not found: {0}")]
+    SceneNotFound(String),
 }
 
 #[derive(Serialize, Deserialize)]
@@ -45,6 +48,7 @@ impl ResponseError for ApiError {
             ApiError::FileDecodeError => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::UrlFetchError(_) => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
             ApiError::ContentExtractionError(_) => actix_web::http::StatusCode::UNPROCESSABLE_ENTITY,
+            ApiError::SceneNotFound(_) => actix_web::http::StatusCode::NOT_FOUND,
             _ => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         

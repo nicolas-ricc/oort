@@ -33,6 +33,7 @@ keyword_extraction = { version = "1.5", features = ["rake", "tf_idf"] }
 stop-words = "0.9"
 dom_smoothie = "0.6"
 dom_query = "0.14"
+nanoid = "0.4"
 
 [features]
 default = []

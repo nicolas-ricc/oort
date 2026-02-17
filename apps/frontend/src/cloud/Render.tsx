@@ -1,6 +1,6 @@
 import { Suspense, useRef, useState, useCallback, MutableRefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Scene } from "./Scene";
+import { Scene, ColorClusterInfo } from "./Scene";
 import { PerspectiveCamera, Trail } from "@react-three/drei";
 import * as THREE from "three";
 import { StarField } from "./background/StarField";
@@ -86,6 +86,7 @@ type RenderProps = {
   onNavigateToIndex?: (index: number) => void;
   screenPositionRef?: MutableRefObject<{ x: number; y: number } | null>;
   onAnimatingChange?: (animating: boolean) => void;
+  onColorClusterInfo?: (info: ColorClusterInfo | null) => void;
 };
 
 function Render({
@@ -98,7 +99,8 @@ function Render({
   onResetToOverview,
   onNavigateToIndex,
   screenPositionRef,
-  onAnimatingChange
+  onAnimatingChange,
+  onColorClusterInfo
 }: RenderProps) {
   const [isAnimating, setIsAnimating] = useState(false);
   const [cameraTarget, setCameraTarget] = useState<{ position: number[]; lookAt: number[] } | null>(null);
@@ -204,6 +206,7 @@ function Render({
           onNavigateToIndex={onNavigateToIndex}
           onCameraTargetChange={handleCameraTargetChange}
           screenPositionRef={screenPositionRef}
+          onColorClusterInfo={onColorClusterInfo}
         />
       </Suspense>
 

@@ -1,11 +1,13 @@
 import Render from './cloud/Render'
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Menu } from './layout/Menu'
 import { Layout } from './layout/Layout'
 import { FloatingPlanetPanel } from './layout/FloatingPlanetPanel'
 import { EmptyStateModal } from './layout/EmptyStateModal'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useNavigation } from './hooks/useNavigation'
+import { useSaveScene, useLoadScene } from './hooks/useScenePersistence'
+import { ColorClusterInfo } from './cloud/Scene'
 
 export type ConceptCluster = {
   concepts: string[];
@@ -21,16 +23,55 @@ function getNodeKey(node: ConceptCluster): string {
   return node.concepts.slice().sort().join("|");
 }
 
-function App() {
+function getSceneIdFromUrl(): string | null {
+  return new URLSearchParams(window.location.search).get('scene');
+}
+
+function AppInner() {
   const [simulationData, setSimulationData] = useState<Simulation>([])
   const [active, setActive] = useState<string>("")
   const [isLoading, setIsLoading] = useState(false)
   const [isAnimating, setIsAnimating] = useState(false)
+  const [colorClusterInfo, setColorClusterInfo] = useState<ColorClusterInfo | null>(null)
+  const [currentSceneId, setCurrentSceneId] = useState<string | null>(getSceneIdFromUrl)
 
   const screenPositionRef = useRef<{ x: number; y: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
   const isEmpty = simulationData.length === 0;
+
+  // Scene persistence
+  const { mutate: saveSceneMutate, isPending: isSaving } = useSaveScene();
+  const { data: loadedScene, isLoading: isSceneLoading, error: sceneError } = useLoadScene(currentSceneId);
+
+  // Populate simulationData when a scene is loaded from URL
+  useEffect(() => {
+    if (loadedScene && loadedScene.length > 0) {
+      setSimulationData(loadedScene);
+      if (loadedScene[0]?.concepts?.length) {
+        setActive(getNodeKey(loadedScene[0]));
+      }
+    }
+  }, [loadedScene]);
+
+  const handleSaveScene = useCallback(() => {
+    if (simulationData.length === 0) return;
+
+    saveSceneMutate(
+      { sceneData: simulationData, sceneId: currentSceneId || undefined },
+      {
+        onSuccess: (sceneId) => {
+          setCurrentSceneId(sceneId);
+          window.history.replaceState({}, '', `?scene=${sceneId}`);
+          navigator.clipboard.writeText(window.location.href).catch(() => {});
+        },
+        onError: (error) => {
+          console.error('Error saving scene:', error);
+          alert('Error saving scene. Please try again.');
+        },
+      }
+    );
+  }, [simulationData, currentSceneId, saveSceneMutate]);
 
   // Navigation hook
   const navigation = useNavigation(simulationData, active, setActive);
@@ -40,11 +81,9 @@ function App() {
     return simulationData.find(node => getNodeKey(node) === active) || null;
   }, [simulationData, active]);
 
-  // Get cluster index for the selected node (prefer semantic group_id from backend)
-  const clusterIndex = useMemo(() => {
-    if (!selectedCluster) return 0;
-    return selectedCluster.group_id ?? selectedCluster.cluster ?? 0;
-  }, [selectedCluster]);
+  const handleColorClusterInfo = useCallback((info: ColorClusterInfo | null) => {
+    setColorClusterInfo(info);
+  }, []);
 
   const handleSimulationUpdate = useCallback((newData: ConceptCluster[]) => {
     setSimulationData(prev => {
@@ -70,10 +109,38 @@ function App() {
     setIsAnimating(animating);
   }, []);
 
-  const client = useMemo(() => new QueryClient(), [])
+  // Scene loading state
+  if (currentSceneId && isSceneLoading) {
+    return (
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <div className="text-terminal-text text-sm flex items-center gap-2">
+          <span className="inline-block w-2 h-2 bg-terminal-text animate-terminal-blink"></span>
+          Loading scene...
+        </div>
+      </div>
+    );
+  }
+
+  // Scene error state
+  if (currentSceneId && sceneError) {
+    return (
+      <div className="fixed inset-0 bg-black flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-terminal-text text-lg mb-4">Scene Not Found</p>
+          <p className="text-terminal-muted text-sm mb-6">This scene may have been deleted or the link is invalid.</p>
+          <a
+            href="/"
+            className="text-terminal-text border border-terminal-border px-4 py-2 rounded hover:bg-zinc-800 text-sm"
+          >
+            Start Fresh
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <QueryClientProvider client={client}>
+    <>
       <Layout isEmpty={isEmpty} canvasRef={canvasRef}>
         <Render
           simulation={simulationData}
@@ -86,6 +153,7 @@ function App() {
           onNavigateToIndex={navigation.navigateToIndex}
           screenPositionRef={screenPositionRef}
           onAnimatingChange={handleAnimatingChange}
+          onColorClusterInfo={handleColorClusterInfo}
         />
         <Menu
           concepts={simulationData}
@@ -98,6 +166,9 @@ function App() {
           onSimulationUpdate={handleSimulationUpdate}
           active={active}
           setLoadingState={setLoadingState}
+          onSaveScene={handleSaveScene}
+          isSaving={isSaving}
+          currentSceneId={currentSceneId}
         />
       </Layout>
 
@@ -105,7 +176,8 @@ function App() {
       {!isEmpty && (
         <FloatingPlanetPanel
           selectedCluster={selectedCluster}
-          clusterIndex={clusterIndex}
+          clusterIndex={colorClusterInfo?.clusterIndex ?? 0}
+          nearbyConcepts={colorClusterInfo?.nearbyConcepts ?? []}
           screenPositionRef={screenPositionRef}
           isAnimating={isAnimating}
           onClose={() => setActive("")}
@@ -113,12 +185,22 @@ function App() {
       )}
 
       {/* Empty state modal */}
-      {isEmpty && (
+      {isEmpty && !currentSceneId && !isSceneLoading && (
         <EmptyStateModal
           onSimulationUpdate={handleSimulationUpdate}
           setLoadingState={setLoadingState}
         />
       )}
+    </>
+  )
+}
+
+function App() {
+  const client = useMemo(() => new QueryClient(), [])
+
+  return (
+    <QueryClientProvider client={client}>
+      <AppInner />
     </QueryClientProvider>
   )
 }

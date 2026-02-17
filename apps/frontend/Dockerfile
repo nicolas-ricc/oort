@@ -15,7 +15,7 @@ RUN rm -rf node_modules && pnpm install --frozen-lockfile
 COPY . .
 
 # Expose port
-EXPOSE 3000
+EXPOSE 5173
 
 # Start the app in development mode with hot reloading
 CMD ["pnpm", "run", "dev", "--host", "0.0.0.0"]
