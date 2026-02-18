@@ -63,7 +63,8 @@ App.tsx
 ├── Layout (isEmpty, canvasRef)
 │   ├── Render.tsx (Canvas + camera controls + screenPositionRef)
 │   │   └── Scene.tsx (3D scene + screen projection)
-│   │       └── Planet.tsx (individual concept nodes)
+│   │       ├── Planet.tsx (individual concept nodes)
+│   │       └── ShootingStarsRain.tsx (warp-speed loading effect)
 │   └── Menu.tsx (concept search + file upload) [hidden when isEmpty]
 ├── FloatingPlanetPanel (fixed overlay, tracks planet screen position)
 └── EmptyStateModal (shown when simulationData is empty)
@@ -82,6 +83,7 @@ App.tsx
 - `hooks/useFileUpload.ts` - TanStack Query mutation for file upload (used by Menu and EmptyStateModal)
 - `hooks/useUrlUpload.ts` - TanStack Query mutation for URL submission (used by Menu and EmptyStateModal)
 - `hooks/useNavigation.ts` - Keyboard/programmatic navigation between planets
+- `cloud/effects/ShootingStarsRain.tsx` - Warp-speed loading effect: 150 white line-segment streaks animated diagonally via a single `<lineSegments>` mesh with raw `Float32Array` buffer updates per frame. Shown during file upload processing, picked up subtly by bloom post-processing
 
 ## 3D-to-Screen Projection (FloatingPlanetPanel)
 
