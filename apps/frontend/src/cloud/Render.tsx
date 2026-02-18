@@ -4,6 +4,7 @@ import { Scene, ColorClusterInfo } from "./Scene";
 import { PerspectiveCamera, Trail } from "@react-three/drei";
 import * as THREE from "three";
 import { StarField } from "./background/StarField";
+import { ShootingStarsRain } from "./effects/ShootingStarsRain";
 import { PostProcessing } from "./effects/PostProcessing";
 import { CameraController } from "./camera/CameraController";
 import { SCENE_SCALE } from "./hooks/useSceneScale";
@@ -87,6 +88,7 @@ type RenderProps = {
   screenPositionRef?: MutableRefObject<{ x: number; y: number } | null>;
   onAnimatingChange?: (animating: boolean) => void;
   onColorClusterInfo?: (info: ColorClusterInfo | null) => void;
+  isLoading?: boolean;
 };
 
 function Render({
@@ -100,7 +102,8 @@ function Render({
   onNavigateToIndex,
   screenPositionRef,
   onAnimatingChange,
-  onColorClusterInfo
+  onColorClusterInfo,
+  isLoading
 }: RenderProps) {
   const [isAnimating, setIsAnimating] = useState(false);
   const [cameraTarget, setCameraTarget] = useState<{ position: number[]; lookAt: number[] } | null>(null);
@@ -185,10 +188,12 @@ function Render({
 
       {/* Always visible background - outside Suspense */}
       <StarField />
+      {isLoading && <ShootingStarsRain />}
 
       {/* Camera controls - outside Suspense */}
       <CameraController
         target={cameraTarget}
+        isLoading={isLoading}
         onAnimationStart={handleAnimationStart}
         onAnimationEnd={handleAnimationEnd}
       />
