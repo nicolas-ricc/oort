@@ -276,6 +276,39 @@ impl DatabaseClient {
         Ok(text_id)
     }
 
+    pub async fn update_text_url(
+        &self,
+        text_id: Uuid,
+        user_id: &str,
+        url: &str,
+        concepts: &[String],
+    ) -> Result<(), ApiError> {
+        let user_uuid = Uuid::parse_str(user_id)
+            .map_err(|e| ApiError::InternalError(format!("Invalid UUID: {}", e)))?;
+
+        // Update text_references table
+        let query = "UPDATE store.text_references SET url = ? WHERE text_id = ?";
+        self.session
+            .query_with_values(query, query_values!(url, text_id))
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Update text reference url error: {}", e)))?;
+
+        // Update concept_text_mapping for each concept
+        for concept in concepts {
+            let mapping_query = "UPDATE store.concept_text_mapping SET url = ? \
+                                WHERE concept_text = ? AND user_id = ? AND text_id = ?";
+            self.session
+                .query_with_values(
+                    mapping_query,
+                    query_values!(url, concept.clone(), user_uuid, text_id),
+                )
+                .await
+                .map_err(|e| ApiError::InternalError(format!("Update concept mapping url error: {}", e)))?;
+        }
+
+        Ok(())
+    }
+
     pub async fn save_scene(
         &self,
         scene_id: &str,

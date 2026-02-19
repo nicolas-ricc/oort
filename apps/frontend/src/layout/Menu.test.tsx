@@ -90,6 +90,7 @@ describe('Menu', () => {
     it('calls setLoadingState(true) when file upload starts', async () => {
       const user = userEvent.setup()
       vi.mocked(fetch).mockResolvedValue({
+        ok: true,
         json: () => Promise.resolve(mockApiResponse),
       } as Response)
 
@@ -106,6 +107,7 @@ describe('Menu', () => {
     it('calls setLoadingState(false) after file upload completes', async () => {
       const user = userEvent.setup()
       vi.mocked(fetch).mockResolvedValue({
+        ok: true,
         json: () => Promise.resolve(mockApiResponse),
       } as Response)
 
@@ -145,6 +147,7 @@ describe('Menu', () => {
     it('sends correct payload to API on file upload', async () => {
       const user = userEvent.setup()
       vi.mocked(fetch).mockResolvedValue({
+        ok: true,
         json: () => Promise.resolve(mockApiResponse),
       } as Response)
 
@@ -182,6 +185,7 @@ describe('Menu', () => {
     it('calls onSimulationUpdate with API response data on success', async () => {
       const user = userEvent.setup()
       vi.mocked(fetch).mockResolvedValue({
+        ok: true,
         json: () => Promise.resolve(mockApiResponse),
       } as Response)
 

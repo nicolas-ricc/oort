@@ -219,12 +219,9 @@ pub async fn process_text(
     let mut mind_map = dimensionality::MindMapProcessor::new(None);
     let clustered_results = mind_map.process_concepts(&all_concepts, &all_embeddings)?;
 
-    // Spawn CDN upload + text reference saving as background task
-    let text_for_cdn = if let Some(url) = &source_url {
-        format!("Source: {}\n\n{}", url, text)
-    } else {
-        text.clone()
-    };
+    // Spawn text reference saving + CDN upload as background task
+    let is_uploaded_text = source_url.is_none();
+    let text_for_cdn = text.clone();
     let filename_for_cdn = filename.clone();
     let user_id_for_cdn = data.user_id.clone();
     let source_url_for_cdn = source_url.unwrap_or_default();
@@ -232,14 +229,15 @@ pub async fn process_text(
     let db_client_cdn = Arc::clone(&state.db_client);
 
     tokio::spawn(async move {
-        if let Some(user_id) = &user_id_for_cdn {
+        // Save text reference immediately (with empty URL) so it's available for queries
+        let saved = if let Some(user_id) = &user_id_for_cdn {
             let normalized_user_id = if user_id == "default" {
                 "550e8400-e29b-41d4-a716-446655440000".to_string()
             } else {
                 user_id.clone()
             };
             let file_size = text_for_cdn.len() as i32;
-            if let Err(e) = db_client_cdn.save_text_reference(
+            match db_client_cdn.save_text_reference(
                 &normalized_user_id,
                 &filename_for_cdn,
                 "",
@@ -247,16 +245,30 @@ pub async fn process_text(
                 &all_concept_strings,
                 Some(file_size),
             ).await {
-                error!("Failed to save text reference: {:?}", e);
+                Ok(text_id) => Some((text_id, normalized_user_id)),
+                Err(e) => { error!("Failed to save text reference: {:?}", e); None }
             }
-        }
+        } else {
+            None
+        };
 
-        match GitHubCDN::new().upload_text(&text_for_cdn, &filename_for_cdn).await {
-            Ok(cdn_url) => {
-                info!("CDN upload succeeded: {}", cdn_url);
-            }
-            Err(e) => {
-                error!("CDN upload failed (non-fatal): {:?}", e);
+        // CDN upload only for user-uploaded texts (URL-sourced texts already have their original URL)
+        if is_uploaded_text {
+            match GitHubCDN::new().upload_text(&text_for_cdn, &filename_for_cdn).await {
+                Ok(cdn_url) => {
+                    info!("CDN upload succeeded: {}", cdn_url);
+                    // Update the URL in DB now that we have it
+                    if let Some((text_id, ref user_id)) = saved {
+                        if let Err(e) = db_client_cdn.update_text_url(
+                            text_id, user_id, &cdn_url, &all_concept_strings,
+                        ).await {
+                            error!("Failed to update CDN URL in DB: {:?}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("CDN upload failed (non-fatal): {:?}", e);
+                }
             }
         }
     });

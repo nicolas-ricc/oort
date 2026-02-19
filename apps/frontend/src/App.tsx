@@ -86,6 +86,7 @@ function AppInner() {
   }, []);
 
   const handleSimulationUpdate = useCallback((newData: ConceptCluster[]) => {
+    if (!newData || !Array.isArray(newData) || newData.length === 0) return;
     setSimulationData(prev => {
       const existingKeys = new Set(prev.map(node => getNodeKey(node)));
 
@@ -154,6 +155,7 @@ function AppInner() {
           screenPositionRef={screenPositionRef}
           onAnimatingChange={handleAnimatingChange}
           onColorClusterInfo={handleColorClusterInfo}
+          isLoading={isLoading}
         />
         <Menu
           concepts={simulationData}

@@ -12,18 +12,15 @@ export function useFileUpload({ onSimulationUpdate, setLoadingState }: UseFileUp
     const { mutate: uploadFile, isPending } = useMutation({
         mutationFn: async (event: ChangeEvent<HTMLInputElement>) => {
             const [file] = event.target.files || [];
-            if (!file) return;
-            const reader = new FileReader();
-            const handleFileUpload = async (file: File, reader: FileReader) => {
-                return new Promise((resolve) => {
-                    reader.onload = async (e) => {
-                        const text = e.target?.result as string;
-                        resolve(text)
-                    }
-                    reader.readAsText(file);
-                })
-            }
-            await handleFileUpload(file, reader)
+            if (!file) return null;
+
+            const text = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target?.result as string);
+                reader.onerror = () => reject(new Error('Failed to read file'));
+                reader.readAsText(file);
+            });
+
             const res = await fetch('http://localhost:8000/api/vectorize', {
                 method: 'POST',
                 headers: {
@@ -31,16 +28,25 @@ export function useFileUpload({ onSimulationUpdate, setLoadingState }: UseFileUp
                     "Accept-Cross-Origin": "*",
                     "Access-Control-Allow-Origin": "*",
                 },
-                body: JSON.stringify({ user_id: defaultUserId, text: reader.result, filename: file.name }),
-            }).then(async (res) => res.json()).catch(err => console.error(err))
-            const vectors = res.data
-            return vectors
+                body: JSON.stringify({ user_id: defaultUserId, text, filename: file.name }),
+            });
+
+            if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                const detail = body?.detail || `Server error (${res.status})`;
+                throw new Error(detail);
+            }
+
+            const data = await res.json();
+            return data.data;
         },
         onMutate: () => {
             setLoadingState(true)
         },
         onSuccess: (data) => {
-            onSimulationUpdate(data)
+            if (data) {
+                onSimulationUpdate(data)
+            }
         },
         onError: (error) => {
             console.error('Error processing file:', error);

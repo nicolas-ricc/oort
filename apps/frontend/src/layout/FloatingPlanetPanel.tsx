@@ -1,5 +1,5 @@
 import { MutableRefObject, useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { X, ExternalLink, Circle } from "lucide-react"
+import { X, ExternalLink, Download, Circle } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import { ConceptCluster } from "@/App"
 import { getAtmosphereColor } from "@/cloud/shaders/AtmosphereShader"
@@ -202,6 +202,17 @@ export function FloatingPlanetPanel({
                                         >
                                             <span className="truncate">{ref.filename}</span>
                                             <ExternalLink size={11} className="flex-shrink-0 text-terminal-muted" />
+                                        </a>
+                                    ) : ref.url && ref.url.length > 0 ? (
+                                        <a
+                                            key={ref.text_id}
+                                            href={ref.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex items-center gap-2 text-xs text-terminal-text hover:text-green-300 transition-colors"
+                                        >
+                                            <span className="truncate">{ref.filename}</span>
+                                            <Download size={11} className="flex-shrink-0 text-terminal-muted" />
                                         </a>
                                     ) : (
                                         <div
