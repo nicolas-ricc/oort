@@ -17,7 +17,6 @@ type PlanetPalette = {
   colors: [string, string, string, string, string, string, string];
   thresholds: [number, number, number, number, number, number];
   specularBand: number;
-  emissiveStrength: number;
   displacementScale: number;
   noiseScale: number;
   octaves: number;
@@ -29,7 +28,6 @@ const PALETTES: PlanetPalette[] = [
     colors: ['#05124d', '#0d2e61', '#9e8a64', '#385a28', '#594d38', '#73675a', '#e6eaf0'],
     thresholds: [-0.3, -0.05, 0.0, 0.1, 0.25, 0.4],
     specularBand: 0.0,
-    emissiveStrength: 0.04,
     displacementScale: 0.08,
     noiseScale: 2.5,
     octaves: 6,
@@ -39,7 +37,6 @@ const PALETTES: PlanetPalette[] = [
     colors: ['#0a2e12', '#1a5c28', '#2d8c3e', '#5ab84e', '#8cd470', '#c4e8a0', '#f0f5e0'],
     thresholds: [-0.2, -0.05, 0.05, 0.15, 0.3, 0.45],
     specularBand: -99.0,
-    emissiveStrength: 0.03,
     displacementScale: 0.07,
     noiseScale: 3.0,
     octaves: 6,
@@ -49,7 +46,6 @@ const PALETTES: PlanetPalette[] = [
     colors: ['#1a0a33', '#3d1a6e', '#6b30a8', '#9455d4', '#b880e8', '#d4aaf5', '#f0e0ff'],
     thresholds: [-0.25, -0.05, 0.05, 0.15, 0.3, 0.45],
     specularBand: -0.05,
-    emissiveStrength: 0.06,
     displacementScale: 0.06,
     noiseScale: 2.8,
     octaves: 6,
@@ -59,7 +55,6 @@ const PALETTES: PlanetPalette[] = [
     colors: ['#ff4400', '#ff6a00', '#cc3300', '#3d1a0a', '#2b1008', '#1a0a05', '#4d3020'],
     thresholds: [-0.2, -0.05, 0.0, 0.1, 0.25, 0.4],
     specularBand: -0.05,
-    emissiveStrength: 0.25,
     displacementScale: 0.12,
     noiseScale: 2.2,
     octaves: 7,
@@ -69,7 +64,6 @@ const PALETTES: PlanetPalette[] = [
     colors: ['#1a3a5c', '#2e5a80', '#5a8ab0', '#8abade', '#b0d4f0', '#d8ecf8', '#f5faff'],
     thresholds: [-0.25, -0.1, 0.0, 0.1, 0.2, 0.35],
     specularBand: 0.1,
-    emissiveStrength: 0.03,
     displacementScale: 0.03,
     noiseScale: 2.0,
     octaves: 5,
@@ -79,7 +73,6 @@ const PALETTES: PlanetPalette[] = [
     colors: ['#6e1a3a', '#a83060', '#d45a80', '#e8a090', '#f0c8a0', '#f5e0c8', '#fff0e8'],
     thresholds: [-0.25, -0.05, 0.05, 0.15, 0.3, 0.45],
     specularBand: -0.05,
-    emissiveStrength: 0.05,
     displacementScale: 0.06,
     noiseScale: 2.6,
     octaves: 6,
@@ -89,7 +82,6 @@ const PALETTES: PlanetPalette[] = [
     colors: ['#6e5020', '#8c6830', '#b08848', '#cca860', '#e0c880', '#f0e0a8', '#f8f0d8'],
     thresholds: [-0.2, -0.05, 0.05, 0.15, 0.3, 0.45],
     specularBand: -99.0,
-    emissiveStrength: 0.03,
     displacementScale: 0.04,
     noiseScale: 2.0,
     octaves: 4,
@@ -99,7 +91,6 @@ const PALETTES: PlanetPalette[] = [
     colors: ['#1a0505', '#4d0a0a', '#801515', '#b03020', '#d45030', '#f08040', '#ffc060'],
     thresholds: [-0.25, -0.1, 0.0, 0.1, 0.25, 0.4],
     specularBand: -99.0,
-    emissiveStrength: 0.2,
     displacementScale: 0.1,
     noiseScale: 2.4,
     octaves: 7,
@@ -264,7 +255,6 @@ const fragmentShader = /* glsl */ `
 
   uniform float uSpecularBand;
   uniform vec3 uEmissiveColor;
-  uniform float uEmissiveStrength;
 
   varying float vElevation;
   varying vec3 vNormal;
@@ -304,8 +294,10 @@ const fragmentShader = /* glsl */ `
       specular = pow(max(dot(vNormal, halfDir), 0.0), 64.0) * 0.5;
     }
 
-    // Emissive glow
-    vec3 emissive = uEmissiveColor * uEmissiveStrength;
+    // Elevation-based emissive glow: bright at low elevations, dim at peaks
+    float t = clamp((e - uThreshold0) / (uThreshold5 - uThreshold0), 0.0, 1.0);
+    float emissiveStrength = mix(0.20, 0.01, t);
+    vec3 emissive = uEmissiveColor * emissiveStrength;
 
     vec3 finalColor = color * diffuse + vec3(specular) + emissive;
 
@@ -356,7 +348,6 @@ export function PlanetMesh({ radius, clusterIndex, atmosphereColor, isSelected, 
 
     uSpecularBand: { value: palette.specularBand },
     uEmissiveColor: { value: new THREE.Vector3(emissiveColor.r, emissiveColor.g, emissiveColor.b) },
-    uEmissiveStrength: { value: palette.emissiveStrength },
   }), [palette, seed, emissiveColor]);
 
   useFrame((_state, delta) => {

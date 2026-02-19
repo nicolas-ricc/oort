@@ -74,7 +74,8 @@ App.tsx
 
 - `App.tsx` - Top-level state (`simulationData`, `active`, `isAnimating`), refs (`screenPositionRef`, `canvasRef`), empty/populated branching
 - `cloud/Scene.tsx` - 3D scene, collision avoidance, planet rendering, `useFrame` screen projection of active node
-- `cloud/Planet.tsx` - Planet mesh with texture and floating label
+- `cloud/Planet.tsx` - Planet wrapper with floating label, delegates rendering to PlanetMesh
+- `cloud/planet/PlanetMesh.tsx` - Procedural planet shader: vertex displacement via fBm noise, fragment coloring via elevation bands, elevation-based emissive glow, specular highlights
 - `cloud/Render.tsx` - R3F Canvas setup, `onPointerMissed` deselection, passes `screenPositionRef` and `onAnimatingChange` to parent
 - `layout/Layout.tsx` - Responsive shell: full-height canvas when `isEmpty`, 70/30 split otherwise
 - `layout/Menu.tsx` - Terminal-styled command palette with concept search, file upload icon, and collapsible URL input row
@@ -136,6 +137,34 @@ This constant controls all 3D positioning: planet distances, camera position, co
 - Multi-pass collision avoidance (up to 5 passes) resolves cascading overlaps
 - Planet radius is 1 unit, minimum safe distance is `4 + 2` (in raw coords)
 - Labels use `<Billboard>` from drei to always face the camera
+
+## Planet Shader System (`cloud/planet/PlanetMesh.tsx`)
+
+Each planet is a `sphereGeometry` with a custom `shaderMaterial`. The vertex shader displaces vertices along normals using fBm (fractional Brownian motion) noise seeded per-planet. The fragment shader colors pixels by elevation band and adds lighting.
+
+### PlanetPalette
+
+8 palettes (indexed by cluster) define per-planet visual identity:
+- `colors` — 7 elevation-band colors (index 0 = lowest/ocean, index 6 = highest/peaks)
+- `thresholds` — 6 elevation breakpoints for `smoothstep` blending between color bands
+- `specularBand` — elevation below which specular highlights apply (ocean sheen); set to `-99.0` to disable
+- `displacementScale`, `noiseScale`, `octaves` — terrain shape parameters
+
+### Elevation-based Emissive Glow
+
+Emissive strength varies by elevation rather than being a fixed per-palette constant. The fragment shader normalizes elevation `e` to `[0, 1]` across the threshold range and interpolates:
+
+```glsl
+float t = clamp((e - uThreshold0) / (uThreshold5 - uThreshold0), 0.0, 1.0);
+float emissiveStrength = mix(0.20, 0.01, t);
+vec3 emissive = uEmissiveColor * emissiveStrength;
+```
+
+- Low elevation (oceans/lava, `t ≈ 0`): `emissiveStrength ≈ 0.20` — bright glow
+- High elevation (peaks, `t ≈ 1`): `emissiveStrength ≈ 0.01` — near-zero glow
+- `uEmissiveColor` is derived from the atmosphere color passed per-planet
+
+This creates physically motivated lighting: deep areas glow hot, peaks are cold.
 
 ## Post-Processing (EffectComposer)
 
