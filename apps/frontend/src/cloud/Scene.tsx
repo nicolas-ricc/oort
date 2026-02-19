@@ -1,6 +1,5 @@
 import { Fragment, useMemo, useEffect, useCallback, MutableRefObject } from "react";
 import { Planet } from "./planet/Planet";
-import { textures } from "@/assets/textures";
 import { useThree, useFrame } from "@react-three/fiber";
 import { AmbientLighting } from "./lighting/AmbientLighting";
 import { ClusterLights } from "./lighting/ClusterLights";
@@ -93,11 +92,6 @@ function calculateDistance(pos1: number[], pos2: number[]): number {
         Math.pow(pos1[1] - pos2[1], 2) +
         Math.pow(pos1[2] - pos2[2], 2)
     );
-}
-
-function getTextureIndexForPlanet(position: number[], textureCount: number): number {
-    const hash = position[0] * 500 + position[1] * 50 + position[2] * 5;
-    return Math.abs(Math.floor(hash)) % textureCount;
 }
 
 // DBSCAN clustering algorithm
@@ -487,22 +481,15 @@ export function Scene({
                 const safeEmbedding = safeParseEmbedding(node.reduced_embedding, SCENE_SCALE);
                 const keyString = getNodeKey(node);
                 const isSelected = activeNode === keyString;
-                const conceptDistance = 8 * SCENE_SCALE;
-                const isNearActive = activeNodePosition ?
-                    calculateDistance(safeEmbedding, activeNodePosition) <= conceptDistance : false;
-                const shouldShowConcepts = isSelected || isNearActive;
-                const textureIndex = getTextureIndexForPlanet(safeEmbedding, textures.length);
                 const clusterIndex = colorIndexMap.get(idx) ?? idx;
 
                 return (
                     <Fragment key={`${keyString}-${idx}`}>
                         <Planet
-                            texturePath={textures[textureIndex]}
                             position={safeEmbedding}
                             concepts={node.concepts}
                             onClick={() => setActive(keyString)}
                             isSelected={isSelected}
-                            shouldShowConcepts={shouldShowConcepts}
                             scaleSize={SCENE_SCALE}
                             clusterIndex={clusterIndex}
                         />
