@@ -1,4 +1,5 @@
 use crate::error::ApiError;
+use futures::future::join_all;
 use log::{debug, info};
 use ndarray::{Array1, ArrayBase, Dim, OwnedRepr};
 use reqwest::Client;
@@ -39,22 +40,24 @@ impl EmbeddingModel {
     }
 
     pub async fn get_batch_embeddings(&self, texts: &[String]) -> Result<Vec<Embedding>, ApiError> {
-        let mut embeddings = Vec::new();
+        let valid_texts: Vec<&str> = texts
+            .iter()
+            .map(|t| t.trim())
+            .filter(|t| !t.is_empty())
+            .collect();
 
-        for text in texts {
-            let text = text.trim();
-            if !text.is_empty() {
-                debug!(
-                    "Processing: '{}'",
-                    &text.chars().take(50).collect::<String>()
-                );
+        info!(
+            "Generating embeddings for {} concepts concurrently",
+            valid_texts.len()
+        );
 
-                let embedding: ArrayBase<OwnedRepr<f32>, Dim<[usize; 1]>> = self.get_contextual_embeddings(text).await?;
-                embeddings.push(embedding);
-            }
-        }
+        let futures: Vec<_> = valid_texts
+            .iter()
+            .map(|&text| self.get_contextual_embeddings(text))
+            .collect();
 
-        Ok(embeddings)
+        let results = join_all(futures).await;
+        results.into_iter().collect()
     }
 
     pub async fn get_contextual_embeddings(&self, text: &str) -> Result<Embedding, ApiError> {

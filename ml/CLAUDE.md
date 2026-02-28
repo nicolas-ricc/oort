@@ -27,12 +27,13 @@ ArticleScraper::scrape_url()              # data/scraper.rs (URL input only)
     ↓ (dom_smoothie Readability + noise filtering)
 KeywordExtractor::extract_candidates()    # models/concepts/nlp.rs
     ↓ (RAKE + TF-IDF on full text, top 20 candidates)
-truncate_at_sentence_boundary()           # models/concepts/truncation.rs
-    ↓ (500 chars, sentence-aware)
 ConceptsModel::generate_concepts()        # models/concepts/model.rs
-    ↓ (Ollama phi3.5, with NLP candidates as hints)
+    ↓ Adaptive strategy:
+    │   < 6000 chars: single LLM call with full text
+    │   ≥ 6000 chars: MapReduce (chunk_text → parallel LLM calls → merge)
+    ↓ (Ollama phi3.5, num_ctx scaled to text length, NLP candidates as hints)
 EmbeddingModel::get_batch_embeddings()    # models/embeddings/model.rs
-    ↓ (Ollama snowflake-arctic-embed2)
+    ↓ (Ollama snowflake-arctic-embed2, concurrent via join_all)
 MindMapProcessor::process_concepts()      # dimensionality.rs
     ├── merge_similar_concepts()          # Union-Find, cosine similarity > 0.7
     ├── build_similarity_matrix()         # Continuous (no threshold), all positive similarities
@@ -43,10 +44,18 @@ ConceptGroup[] with 3D positions + group_id
 ```
 
 ### NLP Pre-processing (`models/concepts/nlp.rs`)
-`KeywordExtractor` runs RAKE + TF-IDF on the **full text** before the LLM call. This compensates for the 500-char truncation by providing statistical keyword candidates as hints in the phi3.5 system prompt.
+`KeywordExtractor` runs RAKE + TF-IDF on the **full text** before the LLM call, providing statistical keyword candidates as hints in the phi3.5 system prompt.
 
-### Text Truncation (`models/concepts/truncation.rs`)
-`truncate_at_sentence_boundary(text, 500)` replaces raw byte slicing. Uses a tiered fallback: sentence end > paragraph break > markdown heading > newline > word boundary > char-safe cut. Filters abbreviations (Dr., U.S., etc.) and is UTF-8 safe.
+### Adaptive Concept Extraction (`models/concepts/model.rs`)
+- **Short texts (< 6000 chars):** Full text sent directly to LLM in a single call. `num_ctx` scaled dynamically: `max(4096, text_len/3 + 1024)`.
+- **Long texts (≥ 6000 chars):** MapReduce strategy — `chunk_text()` splits into ~2000-char overlapping chunks at sentence boundaries, each chunk processed in parallel via `join_all`, results deduplicated by normalized name (highest importance wins). Downstream Union-Find merge handles semantic deduplication.
+
+### Text Chunking (`models/concepts/truncation.rs`)
+`chunk_text(text, chunk_size, overlap)` splits text into overlapping chunks at natural boundaries. Uses `find_last_boundary()` with tiered fallback: sentence end > paragraph break > markdown heading > newline > word boundary. `truncate_at_sentence_boundary()` also uses the same boundary detection. Filters abbreviations (Dr., U.S., etc.) and is UTF-8 safe.
+
+### Parallelization
+- **Embeddings:** `get_batch_embeddings()` fires all Ollama calls concurrently via `join_all`.
+- **LLM + DB:** `process_text()` and `process_concepts_and_embeddings()` run LLM concept extraction and DB user concept loading concurrently via `tokio::try_join!`.
 
 ### URL Scraping (`data/scraper.rs`)
 `ArticleScraper` fetches web pages and extracts article content using `dom_smoothie` (Rust Readability.js port). Two-layer noise filtering: `pre_clean_dom()` removes 30+ CSS selector patterns (reading time, author blocks, related posts, share buttons, etc.) before Readability, then `clean_extracted_text()` regex-cleans residual metadata patterns. JS-heavy sites may fail — the error messaging suggests manual upload as fallback.

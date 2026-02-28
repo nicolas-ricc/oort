@@ -1,9 +1,11 @@
 use crate::error::ApiError;
 use crate::models::concepts::nlp::CandidateKeyword;
+use futures::future::join_all;
 use log::{debug, info};
 use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +27,7 @@ struct OllamaRequest {
 #[derive(Debug, Serialize, Deserialize)]
 struct OllamaOptions {
     temperature: f32,
+    num_ctx: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,7 +44,7 @@ pub struct ConceptsModel {
 impl ConceptsModel {
     pub fn new(base_url: &str) -> Self {
         let client: Client = Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(120))
             .build()
             .expect("Failed to create HTTP client");
 
@@ -87,29 +90,31 @@ impl ConceptsModel {
         hints
     }
 
-    pub async fn generate_concepts(
-        &self,
-        text: &str,
-        nlp_candidates: &[CandidateKeyword],
-    ) -> Result<Vec<Concept>, ApiError> {
-        let candidate_hints = Self::build_candidate_hints(nlp_candidates);
+    fn compute_num_ctx(text_len: usize) -> u32 {
+        let estimated_tokens = text_len / 3;
+        std::cmp::max(4096, (estimated_tokens + 1024) as u32)
+    }
 
+    /// Core LLM call: sends text to Ollama and returns extracted concepts.
+    async fn call_llm(&self, text: &str, candidate_hints: &str) -> Result<Vec<Concept>, ApiError> {
         let system_prompt = format!(
-            r#"You are a concept extractor. Given a text and statistically-identified candidate keywords:
-1. Validate which candidates are meaningful concepts in context
-2. Add important concepts the statistics missed
-3. Rate each concept's importance from 0.0 to 1.0 (1.0 = central theme, 0.0 = barely relevant)
-4. Return 5-10 concepts total
-5. Each concept should be a simple word or short phrase (1-3 words)
+            r#"You are a concept extractor that identifies the core intellectual themes in a text.
+Given a text and statistically-identified candidate keywords:
+
+1. Identify the central themes and ideas (not just mentioned terms)
+2. Validate which candidates represent meaningful concepts in context
+3. Add important conceptual themes the statistics missed
+4. Prefer domain-specific concepts over generic ones (e.g., "reinforcement learning" over "method")
+5. Rate each concept's importance: 1.0 = central thesis, 0.7 = major supporting theme, 0.3 = mentioned topic
+6. Return 5-15 concepts total
+7. Each concept should be a word or short phrase (1-3 words)
 {candidate_hints}
 Output ONLY valid JSON matching the required schema."#
         );
 
-        let truncated_text = super::truncation::truncate_at_sentence_boundary(text, 500);
-
         let template = format!(
-            "Extract 5-10 key concepts from this text. Rate each concept's importance from 0.0 to 1.0:\n\n{}",
-            truncated_text
+            "Extract the key concepts from this text. Rate each concept's importance from 0.0 to 1.0:\n\n{}",
+            text
         );
 
         // JSON schema for structured output: { concepts: [{ name: string, importance: number }] }
@@ -131,12 +136,14 @@ Output ONLY valid JSON matching the required schema."#
             "required": ["concepts"]
         });
 
-        info!("Requesting concepts using model: {}", self.model);
+        let num_ctx = Self::compute_num_ctx(text.len());
+        info!("Requesting concepts using model: {} (num_ctx: {})", self.model, num_ctx);
+
         let request = OllamaRequest {
             model: self.model.clone(),
             prompt: template,
             system: system_prompt,
-            options: OllamaOptions { temperature: 0.0 },
+            options: OllamaOptions { temperature: 0.0, num_ctx },
             format,
             stream: false,
         };
@@ -168,6 +175,10 @@ Output ONLY valid JSON matching the required schema."#
             ApiError::InternalError(format!("JSON parse error: {}", e))
         })?;
 
+        self.parse_concepts_response(&ollama_response.response)
+    }
+
+    fn parse_concepts_response(&self, response: &str) -> Result<Vec<Concept>, ApiError> {
         #[derive(Debug, Deserialize)]
         struct ConceptEntry {
             name: String,
@@ -180,7 +191,7 @@ Output ONLY valid JSON matching the required schema."#
         }
 
         let concepts_response: ConceptsResponse =
-            serde_json::from_str(&ollama_response.response).map_err(|e| {
+            serde_json::from_str(response).map_err(|e| {
                 info!("Error parsing nested JSON: {}", e);
                 ApiError::InternalError(format!("Failed to parse concepts JSON: {}", e))
             })?;
@@ -222,5 +233,58 @@ Output ONLY valid JSON matching the required schema."#
 
         debug!("Lemmatized concepts: {:?}", concepts);
         Ok(concepts)
+    }
+
+    /// Deduplicates concepts from multiple chunks by normalized name, keeping highest importance.
+    fn merge_chunk_concepts(chunk_results: Vec<Vec<Concept>>) -> Vec<Concept> {
+        let mut best_by_name: HashMap<String, Concept> = HashMap::new();
+
+        for concepts in chunk_results {
+            for concept in concepts {
+                let key = concept.concept.to_lowercase();
+                match best_by_name.entry(key) {
+                    std::collections::hash_map::Entry::Occupied(mut e) => {
+                        if concept.importance > e.get().importance {
+                            *e.get_mut() = concept;
+                        }
+                    }
+                    std::collections::hash_map::Entry::Vacant(e) => {
+                        e.insert(concept);
+                    }
+                }
+            }
+        }
+
+        best_by_name.into_values().collect()
+    }
+
+    pub async fn generate_concepts(
+        &self,
+        text: &str,
+        nlp_candidates: &[CandidateKeyword],
+    ) -> Result<Vec<Concept>, ApiError> {
+        let candidate_hints = Self::build_candidate_hints(nlp_candidates);
+
+        if text.len() < 6000 {
+            // Short text: single LLM call with full text (no truncation)
+            self.call_llm(text, &candidate_hints).await
+        } else {
+            // Long text: MapReduce — split into chunks, extract from each, merge
+            info!("Text length {} exceeds 6000 chars, using MapReduce chunking", text.len());
+            let chunks = super::truncation::chunk_text(text, 2000, 200);
+            info!("Split into {} chunks", chunks.len());
+
+            let futures: Vec<_> = chunks
+                .iter()
+                .map(|chunk| self.call_llm(chunk, &candidate_hints))
+                .collect();
+            let results = join_all(futures).await;
+            let chunk_concepts: Result<Vec<Vec<Concept>>, ApiError> =
+                results.into_iter().collect();
+            let merged = Self::merge_chunk_concepts(chunk_concepts?);
+
+            debug!("Merged {} unique concepts from {} chunks", merged.len(), chunks.len());
+            Ok(merged)
+        }
     }
 }

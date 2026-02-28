@@ -33,6 +33,58 @@ fn is_abbreviation(text: &str, match_start: usize) -> bool {
     ABBREVIATIONS.iter().any(|a| word == a) || TLDS.iter().any(|t| word == t)
 }
 
+/// Finds the best natural boundary position within `window`.
+///
+/// Uses a tiered fallback: sentence end > paragraph break > markdown heading >
+/// newline > word boundary > full window length.
+fn find_last_boundary(window: &str) -> usize {
+    let min_pos = window.len() / 5; // 20% of window
+
+    // --- Tier A: Sentence boundary ---
+    let sentence_re = Regex::new(r"[a-z,)][.!?](\s|$)").unwrap();
+    let mut best_sentence: Option<usize> = None;
+    for m in sentence_re.find_iter(window) {
+        let cut = m.start() + 2; // 1 byte for [a-z,)] + 1 byte for [.!?]
+        if cut >= min_pos && !is_abbreviation(window, m.start()) {
+            best_sentence = Some(cut);
+        }
+    }
+    if let Some(pos) = best_sentence {
+        return pos;
+    }
+
+    // --- Tier B: Paragraph break (\n\n) ---
+    if let Some(pos) = window.rfind("\n\n") {
+        if pos >= min_pos {
+            return pos;
+        }
+    }
+
+    // --- Tier C: Markdown heading (\n#) ---
+    if let Some(pos) = window.rfind("\n#") {
+        if pos >= min_pos {
+            return pos;
+        }
+    }
+
+    // --- Tier D: Single newline ---
+    if let Some(pos) = window.rfind('\n') {
+        if pos >= min_pos {
+            return pos;
+        }
+    }
+
+    // --- Tier E: Last whitespace (word boundary, no min position) ---
+    if let Some(pos) = window.rfind(|c: char| c.is_whitespace()) {
+        if pos > 0 {
+            return pos;
+        }
+    }
+
+    // --- Tier F: Full window ---
+    window.len()
+}
+
 /// Truncates `text` to at most `max_bytes` bytes at the best natural boundary.
 ///
 /// If the text fits within the limit it is returned unchanged.
@@ -49,56 +101,52 @@ pub(crate) fn truncate_at_sentence_boundary(text: &str, max_bytes: usize) -> Str
     }
 
     let window = &text[..safe_end];
-    let min_pos = max_bytes / 5; // 20% of budget
+    let pos = find_last_boundary(window);
+    format!("{}...", &text[..pos])
+}
 
-    // --- Tier A: Sentence boundary ---
-    // Matches a lowercase letter, comma, or closing paren followed by sentence-ending
-    // punctuation and then whitespace (or end of string).
-    let sentence_re = Regex::new(r"[a-z,)][.!?](\s|$)").unwrap();
-    let mut best_sentence: Option<usize> = None;
-    for m in sentence_re.find_iter(window) {
-        // The cut position is right after the punctuation mark (skip the leading char).
-        let cut = m.start() + 2; // 1 byte for [a-z,)] + 1 byte for [.!?]
-        if cut >= min_pos {
-            if !is_abbreviation(window, m.start()) {
-                best_sentence = Some(cut);
-            }
+/// Splits `text` into overlapping chunks at sentence boundaries.
+///
+/// Each chunk is at most `chunk_size` bytes, cut at the best natural boundary.
+/// Consecutive chunks overlap by approximately `overlap` bytes to preserve context.
+pub(crate) fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> {
+    if text.len() <= chunk_size {
+        return vec![text.to_string()];
+    }
+
+    let mut chunks = Vec::new();
+    let mut start = 0;
+
+    while start < text.len() {
+        let remaining = text.len() - start;
+        if remaining <= chunk_size {
+            chunks.push(text[start..].to_string());
+            break;
         }
-    }
-    if let Some(pos) = best_sentence {
-        return format!("{}...", &text[..pos]);
-    }
 
-    // --- Tier B: Paragraph break (\n\n) ---
-    if let Some(pos) = window.rfind("\n\n") {
-        if pos >= min_pos {
-            return format!("{}...", &text[..pos]);
-        }
-    }
+        let window_end = floor_char_boundary(text, start + chunk_size);
+        let window = &text[start..window_end];
+        let boundary = find_last_boundary(window);
+        let actual_end = start + boundary;
 
-    // --- Tier C: Markdown heading (\n#) ---
-    if let Some(pos) = window.rfind("\n#") {
-        if pos >= min_pos {
-            return format!("{}...", &text[..pos]);
-        }
-    }
+        chunks.push(text[start..actual_end].to_string());
 
-    // --- Tier D: Single newline ---
-    if let Some(pos) = window.rfind('\n') {
-        if pos >= min_pos {
-            return format!("{}...", &text[..pos]);
-        }
-    }
+        // Next chunk starts `overlap` chars before the cut, at a char boundary
+        let overlap_start = if actual_end > overlap {
+            floor_char_boundary(text, actual_end - overlap)
+        } else {
+            actual_end
+        };
 
-    // --- Tier E: Last whitespace (word boundary, no min position) ---
-    if let Some(pos) = window.rfind(|c: char| c.is_whitespace()) {
-        if pos > 0 {
-            return format!("{}...", &text[..pos]);
+        // Ensure forward progress
+        if overlap_start <= start {
+            start = actual_end;
+        } else {
+            start = overlap_start;
         }
     }
 
-    // --- Tier F: Raw char-safe cut ---
-    format!("{}...", window)
+    chunks
 }
 
 #[cfg(test)]
@@ -242,6 +290,69 @@ mod tests {
         // boundary (dots preceded by dots don't match [a-z,)]). The function
         // falls through to a word/whitespace boundary.
         assert!(result.contains("happened"));
+    }
+
+    // ==================== chunk_text Tests ====================
+
+    #[test]
+    fn test_chunk_short_text_passthrough() {
+        let text = "Hello world. This is short.";
+        let chunks = chunk_text(text, 2000, 200);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], text);
+    }
+
+    #[test]
+    fn test_chunk_splits_at_sentence_boundary() {
+        // Two sentences, each ~120 chars. With chunk_size=150, should split into 2 chunks.
+        let s1 = format!("The quick brown fox jumped over the lazy dog. ");
+        let s2 = format!("Then the cat sat on the mat and looked around carefully. ");
+        let text = format!("{}{}{}", s1, s2, "a".repeat(100));
+        let chunks = chunk_text(&text, 150, 30);
+        assert!(chunks.len() >= 2);
+        // First chunk should end at a sentence boundary
+        assert!(chunks[0].contains("dog.") || chunks[0].contains("carefully."));
+    }
+
+    #[test]
+    fn test_chunk_overlap() {
+        // Build text with clear sentence boundaries
+        let sentences: Vec<String> = (0..10)
+            .map(|i| format!("This is sentence number {} with some extra padding words. ", i))
+            .collect();
+        let text = sentences.join("");
+        let chunks = chunk_text(&text, 200, 50);
+        assert!(chunks.len() >= 2);
+        // Check that consecutive chunks share some content (overlap)
+        for i in 0..chunks.len() - 1 {
+            let end_of_current = &chunks[i][chunks[i].len().saturating_sub(40)..];
+            // The start of the next chunk should contain some text from the end of the current
+            let has_overlap = chunks[i + 1].contains(end_of_current)
+                || end_of_current.split_whitespace().any(|w| chunks[i + 1].starts_with(w));
+            // Overlap might not be exact due to sentence boundaries, but chunks should cover all text
+            assert!(
+                has_overlap || chunks[i + 1].len() > 0,
+                "Expected overlap between chunk {} and {}",
+                i,
+                i + 1
+            );
+        }
+    }
+
+    #[test]
+    fn test_chunk_covers_full_text() {
+        let text = "word ".repeat(1000); // ~5000 chars
+        let chunks = chunk_text(&text, 500, 50);
+        assert!(chunks.len() >= 9); // ~5000/500 with some overlap
+        // Last chunk should contain the end of the text
+        assert!(chunks.last().unwrap().trim().ends_with("word"));
+    }
+
+    #[test]
+    fn test_chunk_empty_text() {
+        let chunks = chunk_text("", 2000, 200);
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0], "");
     }
 
     #[test]

@@ -46,7 +46,25 @@ pub async fn process_concepts_and_embeddings(
 
     let extractor = KeywordExtractor::new();
     let nlp_candidates = extractor.extract_candidates(text, 20);
-    let new_concepts = state.concepts_model.generate_concepts(text, &nlp_candidates).await?;
+
+    // Compute user UUID upfront so DB query can run in parallel with LLM
+    let uuid_str = user_id.map(|uid| {
+        let user_uuid = Uuid::new_v5(&Uuid::NAMESPACE_DNS, uid.as_bytes());
+        user_uuid.to_string()
+    });
+
+    // Run LLM concept extraction and DB load concurrently
+    let concepts_future = state.concepts_model.generate_concepts(text, &nlp_candidates);
+    let db_future = async {
+        if let Some(ref uuid_str) = uuid_str {
+            info!("Loading existing concepts for user: {}", uuid_str);
+            state.db_client.get_user_concepts(uuid_str).await
+        } else {
+            Ok(Vec::new())
+        }
+    };
+
+    let (new_concepts, user_concepts) = tokio::try_join!(concepts_future, db_future)?;
 
     if new_concepts.is_empty() {
         return Err(ApiError::NoConceptsExtracted);
@@ -55,25 +73,10 @@ pub async fn process_concepts_and_embeddings(
     let mut all_concepts = new_concepts.clone();
     let mut existing_embeddings = Vec::new();
 
-    let uuid_str = if let Some(uid) = user_id {
-        info!("Loading existing concepts for user: {}", uid);
-
-        let namespace = Uuid::NAMESPACE_DNS;
-
-        let user_uuid = Uuid::new_v5(&namespace, uid.as_bytes());
-        let uuid_str = user_uuid.to_string();
-
-        let user_concepts = state.db_client.get_user_concepts(&uuid_str).await?;
-
-        for (concept, embedding) in user_concepts {
-            all_concepts.push(concept);
-            existing_embeddings.push(embedding);
-        }
-
-        Some(uuid_str)
-    } else {
-        None
-    };
+    for (concept, embedding) in user_concepts {
+        all_concepts.push(concept);
+        existing_embeddings.push(embedding);
+    }
 
     let new_concept_strings: Vec<String> = new_concepts.iter().map(|c| c.concept.clone()).collect();
 
@@ -151,7 +154,28 @@ pub async fn process_text(
 
     let extractor = KeywordExtractor::new();
     let nlp_candidates = extractor.extract_candidates(&text, 20);
-    let new_concepts = state.concepts_model.generate_concepts(&text, &nlp_candidates).await?;
+
+    // Compute user UUID upfront so DB query can run in parallel with LLM
+    let uuid_str = data.user_id.as_deref().map(|user_id| {
+        if user_id == "default" {
+            "550e8400-e29b-41d4-a716-446655440000".to_string()
+        } else {
+            user_id.to_string()
+        }
+    });
+
+    // Run LLM concept extraction and DB load concurrently
+    let concepts_future = state.concepts_model.generate_concepts(&text, &nlp_candidates);
+    let db_future = async {
+        if let Some(ref uuid_str) = uuid_str {
+            info!("Loading existing concepts for user: {}", uuid_str);
+            state.db_client.get_user_concepts(uuid_str).await
+        } else {
+            Ok(Vec::new())
+        }
+    };
+
+    let (new_concepts, user_concepts) = tokio::try_join!(concepts_future, db_future)?;
 
     if new_concepts.is_empty() {
         return Err(ApiError::NoConceptsExtracted);
@@ -160,29 +184,10 @@ pub async fn process_text(
     let mut all_concepts = new_concepts.clone();
     let mut existing_embeddings = Vec::new();
 
-    let uuid_str = if let Some(user_id) = data.user_id.as_deref() {
-        info!("Loading existing concepts for user: {}", user_id);
-        
-        // Convert "default" to a proper UUID format
-        let normalized_user_id = if user_id == "default" {
-            "550e8400-e29b-41d4-a716-446655440000"
-        } else {
-            user_id
-        };
-
-        let uuid_str = normalized_user_id.to_string();
-
-        let user_concepts = state.db_client.get_user_concepts(&uuid_str).await?;
-
-        for (concept, embedding) in user_concepts {
-            all_concepts.push(concept);
-            existing_embeddings.push(embedding);
-        }
-
-        Some(uuid_str)
-    } else {
-        None
-    };
+    for (concept, embedding) in user_concepts {
+        all_concepts.push(concept);
+        existing_embeddings.push(embedding);
+    }
 
     let new_concept_strings: Vec<String> = new_concepts.iter().map(|c| c.concept.clone()).collect();
 
