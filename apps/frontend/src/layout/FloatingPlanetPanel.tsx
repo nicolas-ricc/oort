@@ -22,6 +22,7 @@ type FloatingPlanetPanelProps = {
     screenPositionRef: MutableRefObject<{ x: number; y: number } | null>;
     isAnimating: boolean;
     onClose: () => void;
+    proximityPlanet?: { concepts: string[]; distance: number } | null;
 }
 
 const defaultUserId = "550e8400-e29b-41d4-a716-446655440000";
@@ -35,7 +36,8 @@ export function FloatingPlanetPanel({
     nearbyConcepts,
     screenPositionRef,
     isAnimating,
-    onClose
+    onClose,
+    proximityPlanet,
 }: FloatingPlanetPanelProps) {
     const panelRef = useRef<HTMLDivElement>(null);
     const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
@@ -115,6 +117,36 @@ export function FloatingPlanetPanel({
         rafId = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(rafId);
     }, [visible, updatePosition]);
+
+    // Minimized proximity approach tag — shown when nearby but not selected
+    const SCENE_SCALE = 2;
+    const showProximityTag = !visible && proximityPlanet && proximityPlanet.distance < 5 * SCENE_SCALE;
+    const proximityOpacity = showProximityTag
+        ? Math.max(0.3, 1 - proximityPlanet!.distance / (5 * SCENE_SCALE))
+        : 0;
+
+    if (showProximityTag) {
+        return (
+            <div
+                className="fixed z-30 pointer-events-none font-mono"
+                style={{
+                    left: '50%',
+                    top: '40%',
+                    transform: 'translate(-50%, -50%)',
+                    opacity: proximityOpacity,
+                }}
+            >
+                <div className="bg-zinc-900/50 backdrop-blur-sm border border-terminal-border/30 px-3 py-1.5">
+                    <span className="text-terminal-text text-xs uppercase">
+                        {proximityPlanet!.concepts[0]}
+                    </span>
+                    <span className="text-terminal-muted text-[10px] ml-2">
+                        {proximityPlanet!.distance.toFixed(1)}
+                    </span>
+                </div>
+            </div>
+        );
+    }
 
     if (!visible || !position) return null;
 

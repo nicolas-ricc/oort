@@ -28,12 +28,16 @@ describe('Menu', () => {
   const mockOnSimulationUpdate = vi.fn()
   const mockSetLoadingState = vi.fn()
 
+  const mockOnToggle = vi.fn()
+
   const defaultProps = {
     concepts: [],
     onSelect: mockOnSelect,
     active: '',
     onSimulationUpdate: mockOnSimulationUpdate,
     setLoadingState: mockSetLoadingState,
+    isOpen: true,
+    onToggle: mockOnToggle,
   }
 
   beforeEach(() => {

@@ -1,13 +1,16 @@
-import Render from './cloud/Render'
+import Render, { ProximityData } from './cloud/Render'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Menu } from './layout/Menu'
 import { Layout } from './layout/Layout'
 import { FloatingPlanetPanel } from './layout/FloatingPlanetPanel'
 import { EmptyStateModal } from './layout/EmptyStateModal'
+import { HUD } from './layout/HUD'
+import { Minimap } from './layout/Minimap'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useNavigation } from './hooks/useNavigation'
 import { useSaveScene, useLoadScene } from './hooks/useScenePersistence'
 import { ColorClusterInfo } from './cloud/Scene'
+import { SpaceshipState } from './cloud/spaceship/useSpaceshipControls'
 
 export type ConceptCluster = {
   concepts: string[];
@@ -34,9 +37,12 @@ function AppInner() {
   const [isAnimating, setIsAnimating] = useState(false)
   const [colorClusterInfo, setColorClusterInfo] = useState<ColorClusterInfo | null>(null)
   const [currentSceneId, setCurrentSceneId] = useState<string | null>(getSceneIdFromUrl)
+  const [terminalOpen, setTerminalOpen] = useState(false)
+  const [proximityData, setProximityData] = useState<ProximityData | null>(null)
 
   const screenPositionRef = useRef<{ x: number; y: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const shipStateRef = useRef<SpaceshipState | null>(null);
 
   const isEmpty = simulationData.length === 0;
 
@@ -110,6 +116,21 @@ function AppInner() {
     setIsAnimating(animating);
   }, []);
 
+  const handleTerminalToggle = useCallback(() => {
+    setTerminalOpen(prev => !prev);
+  }, []);
+
+  const handleProximityChange = useCallback((data: ProximityData | null) => {
+    setProximityData(data);
+  }, []);
+
+  // Ship position/yaw for minimap (computed during render from ref)
+  const shipPosition = shipStateRef.current?.position ?? null;
+  const shipQuat = shipStateRef.current?.quaternion;
+  const shipYaw = shipQuat
+    ? Math.atan2(2 * (shipQuat.w * shipQuat.y + shipQuat.x * shipQuat.z), 1 - 2 * (shipQuat.y * shipQuat.y + shipQuat.x * shipQuat.x))
+    : 0;
+
   // Scene loading state
   if (currentSceneId && isSceneLoading) {
     return (
@@ -142,7 +163,7 @@ function AppInner() {
 
   return (
     <>
-      <Layout isEmpty={isEmpty} canvasRef={canvasRef}>
+      <Layout canvasRef={canvasRef}>
         <Render
           simulation={simulationData}
           activeNode={active}
@@ -156,23 +177,53 @@ function AppInner() {
           onAnimatingChange={handleAnimatingChange}
           onColorClusterInfo={handleColorClusterInfo}
           isLoading={isLoading}
-        />
-        <Menu
-          concepts={simulationData}
-          onSelect={(concept) => {
-            const foundNode = simulationData.find(s => s.concepts.includes(concept)) || simulationData[0];
-            if (foundNode) {
-              setActive(getNodeKey(foundNode));
-            }
-          }}
-          onSimulationUpdate={handleSimulationUpdate}
-          active={active}
-          setLoadingState={setLoadingState}
-          onSaveScene={handleSaveScene}
-          isSaving={isSaving}
-          currentSceneId={currentSceneId}
+          shipStateRef={shipStateRef}
+          controlsEnabled={!terminalOpen}
+          onProximityChange={handleProximityChange}
         />
       </Layout>
+
+      {/* Terminal overlay */}
+      <Menu
+        concepts={simulationData}
+        onSelect={(concept) => {
+          const foundNode = simulationData.find(s => s.concepts.includes(concept)) || simulationData[0];
+          if (foundNode) {
+            setActive(getNodeKey(foundNode));
+          }
+        }}
+        onSimulationUpdate={handleSimulationUpdate}
+        active={active}
+        setLoadingState={setLoadingState}
+        onSaveScene={handleSaveScene}
+        isSaving={isSaving}
+        currentSceneId={currentSceneId}
+        isOpen={terminalOpen}
+        onToggle={handleTerminalToggle}
+      />
+
+      {/* HUD overlay */}
+      {!isEmpty && (
+        <HUD
+          shipStateRef={shipStateRef}
+          simulationData={simulationData}
+          nearestPlanet={proximityData?.nearestPlanet ?? null}
+          regionName={proximityData?.regionName ?? null}
+          nearbyPlanets={proximityData?.nearbyPlanets ?? []}
+          discoveredCount={simulationData.length}
+          totalCount={simulationData.length}
+        />
+      )}
+
+      {/* Minimap */}
+      {!isEmpty && (
+        <Minimap
+          simulationData={simulationData}
+          shipPosition={shipPosition}
+          shipYaw={shipYaw}
+          activeNode={active}
+        />
+      )}
 
       {/* Floating panel - outside Layout, positioned fixed */}
       {!isEmpty && (
@@ -183,6 +234,7 @@ function AppInner() {
           screenPositionRef={screenPositionRef}
           isAnimating={isAnimating}
           onClose={() => setActive("")}
+          proximityPlanet={proximityData?.nearestPlanet ?? null}
         />
       )}
 

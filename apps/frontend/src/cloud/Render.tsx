@@ -1,12 +1,14 @@
 import { Suspense, useRef, useState, useCallback, MutableRefObject } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Scene, ColorClusterInfo } from "./Scene";
-import { PerspectiveCamera, Trail } from "@react-three/drei";
+import { PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { StarField } from "./background/StarField";
 import { ShootingStarsRain } from "./effects/ShootingStarsRain";
 import { PostProcessing } from "./effects/PostProcessing";
-import { CameraController } from "./camera/CameraController";
+import { SpaceshipController } from "./spaceship/SpaceshipController";
+import { Spaceship } from "./spaceship/Spaceship";
+import { SpaceshipState } from "./spaceship/useSpaceshipControls";
 import { SCENE_SCALE } from "./hooks/useSceneScale";
 
 function LoadingIndicator() {
@@ -26,56 +28,6 @@ function LoadingIndicator() {
   );
 }
 
-function ShootingStar() {
-  const starRef = useRef<THREE.Mesh>(null);
-  const glowRef = useRef<THREE.Mesh>(null);
-
-  useFrame((state) => {
-    const t = state.clock.getElapsedTime() * 2;
-
-    if (starRef.current) {
-      starRef.current.position.set(
-        Math.sin(t) * 4,
-        Math.atan(t) * Math.cos(t / 2) * 2,
-        Math.cos(t) * 4
-      );
-
-      if (glowRef.current) {
-        glowRef.current.position.copy(starRef.current.position);
-        const pulseScale = 1 + Math.sin(t * 5) * 0.2;
-        glowRef.current.scale.set(pulseScale, pulseScale, pulseScale);
-      }
-    }
-  });
-
-  return (
-    <group>
-      <Trail
-        width={5}
-        length={15}
-        color={new THREE.Color(0.8, 0.2, 1)}
-        attenuation={(t) => t * t}
-        decay={2}
-      >
-        <mesh ref={starRef}>
-          <sphereGeometry args={[0.2]} />
-          <meshBasicMaterial color={[5, 0.5, 5]} toneMapped={false} />
-        </mesh>
-      </Trail>
-
-      <mesh ref={glowRef}>
-        <sphereGeometry args={[0.5]} />
-        <meshBasicMaterial
-          color={[2, 0.2, 2]}
-          transparent={true}
-          opacity={0.4}
-          toneMapped={false}
-        />
-      </mesh>
-    </group>
-  );
-}
-
 type RenderProps = {
   simulation: any[];
   activeNode: string;
@@ -89,6 +41,15 @@ type RenderProps = {
   onAnimatingChange?: (animating: boolean) => void;
   onColorClusterInfo?: (info: ColorClusterInfo | null) => void;
   isLoading?: boolean;
+  shipStateRef: MutableRefObject<SpaceshipState | null>;
+  controlsEnabled: boolean;
+  onProximityChange?: (data: ProximityData | null) => void;
+};
+
+export type ProximityData = {
+  nearestPlanet: { concepts: string[]; distance: number } | null;
+  nearbyPlanets: { concepts: string[]; distance: number }[];
+  regionName: string | null;
 };
 
 function Render({
@@ -103,7 +64,10 @@ function Render({
   screenPositionRef,
   onAnimatingChange,
   onColorClusterInfo,
-  isLoading
+  isLoading,
+  shipStateRef,
+  controlsEnabled,
+  onProximityChange,
 }: RenderProps) {
   const [isAnimating, setIsAnimating] = useState(false);
   const [cameraTarget, setCameraTarget] = useState<{ position: number[]; lookAt: number[] } | null>(null);
@@ -162,6 +126,10 @@ function Render({
       return isNaN(val) ? 0 : val * SCENE_SCALE;
     }));
 
+  // Get ship speed for post-processing effects
+  const shipSpeed = shipStateRef.current?.speed ?? 0;
+  const maxSpeed = (shipStateRef.current as any)?.maxSpeed ?? 240;
+
   return (
     <Canvas
       className="w-full h-full"
@@ -182,7 +150,7 @@ function Render({
         makeDefault
         fov={75}
         position={calculateCameraPosition(positions).position}
-        near={0.5}
+        near={0.1}
         far={1000}
       />
 
@@ -190,12 +158,20 @@ function Render({
       <StarField />
       {isLoading && <ShootingStarsRain />}
 
-      {/* Camera controls - outside Suspense */}
-      <CameraController
+      {/* Spaceship controls */}
+      <SpaceshipController
         target={cameraTarget}
         isLoading={isLoading}
         onAnimationStart={handleAnimationStart}
         onAnimationEnd={handleAnimationEnd}
+        shipStateRef={shipStateRef}
+        controlsEnabled={controlsEnabled}
+      />
+
+      {/* Spaceship mesh */}
+      <Spaceship
+        shipStateRef={shipStateRef}
+        visible={controlsEnabled}
       />
 
       {/* Scene content with loading fallback */}
@@ -212,11 +188,13 @@ function Render({
           onCameraTargetChange={handleCameraTargetChange}
           screenPositionRef={screenPositionRef}
           onColorClusterInfo={onColorClusterInfo}
+          onProximityChange={onProximityChange}
+          shipStateRef={shipStateRef}
         />
       </Suspense>
 
       {/* Post-processing - with fixes for idle rendering */}
-      <PostProcessing />
+      <PostProcessing shipSpeed={shipSpeed} maxSpeed={maxSpeed} />
     </Canvas>
   );
 }

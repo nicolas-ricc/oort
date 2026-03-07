@@ -26,10 +26,15 @@ export function Planet({
   const hasRings = concepts.length >= 3;
   const baseRadius = 1.2 * scaleSize * Math.min(1 + concepts.length * 0.15, 2);
 
-  // Deterministic seed from position so each planet gets unique terrain
+  // Deterministic seed from concepts so planet appearance is content-based
   const seed = useMemo(() => {
-    return position[0] * 500 + position[1] * 50 + position[2] * 5;
-  }, [position]);
+    const str = concepts.join('|');
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+    }
+    return (Math.abs(hash) % 99991) / 99991;
+  }, [concepts]);
 
   return (
     <group position={position.map(p => parseFloat(String(p))) as [number, number, number]}>

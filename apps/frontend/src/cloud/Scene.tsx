@@ -1,9 +1,12 @@
-import { Fragment, useMemo, useEffect, useCallback, MutableRefObject } from "react";
+import { Fragment, useMemo, useEffect, useCallback, useRef, MutableRefObject } from "react";
 import { Planet } from "./planet/Planet";
 import { useThree, useFrame } from "@react-three/fiber";
 import { AmbientLighting } from "./lighting/AmbientLighting";
 import { ClusterLights } from "./lighting/ClusterLights";
+import { NebulaClouds } from "./effects/NebulaClouds";
 import { SCENE_SCALE } from "./hooks/useSceneScale";
+import { SpaceshipState } from "./spaceship/useSpaceshipControls";
+import { ProximityData } from "./Render";
 import * as THREE from "three";
 
 function safeParseEmbedding(embedding: number[] | string[], scaleFactor = SCENE_SCALE): number[] {
@@ -209,6 +212,8 @@ type SceneProps = {
     onCameraTargetChange?: (target: { position: number[]; lookAt: number[] } | null) => void;
     screenPositionRef?: MutableRefObject<{ x: number; y: number } | null>;
     onColorClusterInfo?: (info: ColorClusterInfo | null) => void;
+    onProximityChange?: (data: ProximityData | null) => void;
+    shipStateRef?: MutableRefObject<SpaceshipState | null>;
 };
 
 export function Scene({
@@ -222,7 +227,9 @@ export function Scene({
     onNavigateToIndex,
     onCameraTargetChange,
     screenPositionRef,
-    onColorClusterInfo
+    onColorClusterInfo,
+    onProximityChange,
+    shipStateRef,
 }: SceneProps) {
     const { gl, camera } = useThree();
 
@@ -322,21 +329,80 @@ export function Scene({
         return activeNodeData ? safeParseEmbedding(activeNodeData.reduced_embedding, SCENE_SCALE) : null;
     }, [adjustedNodes, activeNode, getNodeKey]);
 
-    // Project active node position to screen coordinates
+    // Frame counter for throttled proximity updates
+    const frameCountRef = useRef(0);
+
+    // Project active node position to screen coordinates + proximity detection
     useFrame(() => {
-        if (!screenPositionRef) return;
-        if (!activeNodePosition) {
-            screenPositionRef.current = null;
-            return;
+        if (screenPositionRef) {
+            if (!activeNodePosition) {
+                screenPositionRef.current = null;
+            } else {
+                const vec = new THREE.Vector3(activeNodePosition[0], activeNodePosition[1], activeNodePosition[2]);
+                vec.project(camera);
+                const halfWidth = gl.domElement.clientWidth / 2;
+                const halfHeight = gl.domElement.clientHeight / 2;
+                screenPositionRef.current = {
+                    x: vec.x * halfWidth + halfWidth,
+                    y: -(vec.y * halfHeight) + halfHeight,
+                };
+            }
         }
-        const vec = new THREE.Vector3(activeNodePosition[0], activeNodePosition[1], activeNodePosition[2]);
-        vec.project(camera);
-        const halfWidth = gl.domElement.clientWidth / 2;
-        const halfHeight = gl.domElement.clientHeight / 2;
-        screenPositionRef.current = {
-            x: vec.x * halfWidth + halfWidth,
-            y: -(vec.y * halfHeight) + halfHeight,
-        };
+
+        // Throttled proximity detection (every 10 frames)
+        frameCountRef.current++;
+        if (onProximityChange && frameCountRef.current % 10 === 0) {
+            const shipPos = shipStateRef?.current?.position;
+            if (!shipPos || adjustedNodes.length === 0) {
+                onProximityChange(null);
+                return;
+            }
+
+            const threshold = 8 * SCENE_SCALE;
+            const shipArr = [shipPos.x, shipPos.y, shipPos.z];
+
+            const distances = adjustedNodes.map((node: any) => {
+                const pos = safeParseEmbedding(node.reduced_embedding, SCENE_SCALE);
+                const dist = calculateDistance(shipArr, pos);
+                return { concepts: node.concepts ?? [], distance: dist };
+            });
+
+            distances.sort((a, b) => a.distance - b.distance);
+
+            const nearest = distances[0] ?? null;
+            const nearby = distances.filter(d => d.distance <= threshold).slice(0, 5);
+
+            // Region name from nearest DBSCAN cluster centroid
+            let regionName: string | null = null;
+            if (clusterLights.length > 0) {
+                let minClusterDist = Infinity;
+                for (const cl of clusterLights) {
+                    const d = calculateDistance(shipArr, cl.centroid);
+                    if (d < minClusterDist) {
+                        minClusterDist = d;
+                        // Find the first planet in this cluster to get its primary concept
+                        const clusterPoints = adjustedNodes.map((node: any) => ({
+                            position: safeParseEmbedding(node.reduced_embedding, SCENE_SCALE),
+                            node
+                        }));
+                        let closestToCenter = Infinity;
+                        for (const pt of clusterPoints) {
+                            const ptDist = calculateDistance(pt.position, cl.centroid);
+                            if (ptDist < closestToCenter) {
+                                closestToCenter = ptDist;
+                                regionName = pt.node.concepts?.[0] ?? null;
+                            }
+                        }
+                    }
+                }
+            }
+
+            onProximityChange({
+                nearestPlanet: nearest ? { concepts: nearest.concepts, distance: nearest.distance } : null,
+                nearbyPlanets: nearby.map(n => ({ concepts: n.concepts, distance: n.distance })),
+                regionName,
+            });
+        }
     });
 
     // Calculate camera target and notify parent
@@ -471,10 +537,20 @@ export function Scene({
         onColorClusterInfo({ clusterIndex, nearbyConcepts });
     }, [activeNode, adjustedNodes, colorIndexMap, getNodeKey, onColorClusterInfo]);
 
+    // Nebula cluster data for visual effects
+    const nebulaClusterData = useMemo(() => {
+        return clusterLights.map((cl, idx) => ({
+            centroid: cl.centroid,
+            radius: cl.radius,
+            color: cl.color,
+        }));
+    }, [clusterLights]);
+
     return (
         <>
             <AmbientLighting />
             <ClusterLights clusters={clusterLights} />
+            <NebulaClouds clusters={nebulaClusterData} />
 
             {/* Planets */}
             {adjustedNodes.map((node: any, idx: number) => {
