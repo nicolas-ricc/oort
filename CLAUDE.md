@@ -102,6 +102,10 @@ docker-compose up oort-db    # Start Cassandra
 - Ollama models: `phi3.5` (concept extraction), `snowflake-arctic-embed2` (embeddings)
 - Default user UUID: `550e8400-e29b-41d4-a716-446655440000`
 
+## GPU Memory Management
+
+The ML backend loads two models onto the GPU: the LLM (~2.6GB) and the embedding model (~0.6GB). **Model loading order matters**: the embedding model must load before the LLM so that the LLM's `Utilization`-based KV cache sizing accounts for VRAM already consumed. Default utilization is `0.8`, leaving ~1.6GB free for inference temporaries on an 8GB GPU. See `~/.claude/projects/-home-nicolasr-Projects-oort/memory/gpu-memory.md` for detailed analysis and alternative strategies.
+
 ## Environment Variables
 
 - `OLLAMA_URL` - Ollama service URL (default: `http://ollama:11434`)
@@ -109,6 +113,8 @@ docker-compose up oort-db    # Start Cassandra
 - `GITHUB_TOKEN_FILE` - Path to GitHub token for CDN uploads
 - `GITHUB_OWNER` - GitHub username for CDN repository
 - `RUST_LOG` - Logging level (default: `info`)
+- `LLM_GPU_UTILIZATION` - GPU memory fraction for KV cache (default: `0.8`, range 0.0-1.0)
+- `EMBEDDING_ON_CPU` - Force embedding model to CPU (default: `false`, set `true` for tight GPU memory)
 
 ## Ports
 

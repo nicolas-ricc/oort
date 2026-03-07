@@ -7,6 +7,7 @@ services: # New Backend Rust service
       - "9042:9042"
     environment:
       - CASSANDRA_CLUSTER_NAME=oort_cluster
+      - CASSANDRA_BROADCAST_RPC_ADDRESS=oort-db
       - HEAP_NEWSIZE=128M
       - MAX_HEAP_SIZE=512M
     volumes:
@@ -34,21 +35,30 @@ services: # New Backend Rust service
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "bash", "/usr/src/app/preload_models.sh"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 120s
     volumes:
       - ./ml/src:/usr/src/app/src # Map source code
       - ./ml/Cargo.toml:/usr/src/app/Cargo.toml
       - ./ml/Cargo.lock:/usr/src/app/Cargo.lock
       - rust_target_cache:/usr/src/app/target # Cache compiled artifacts
+      - hf_cache:/root/.cache/huggingface # Cache downloaded models
     environment:
       - RUST_LOG=info
-      - OLLAMA_URL=http://ollama:11434
       - GITHUB_TOKEN_FILE=/run/secrets/github_token
       - GITHUB_OWNER=nicolas-ricc
+      - LLM_MODEL_REPO=bartowski/Phi-3.5-mini-instruct-GGUF
+      - LLM_GGUF_FILES=Phi-3.5-mini-instruct-Q4_K_M.gguf
+      - EMBEDDING_MODEL_REPO=Qwen/Qwen3-Embedding-0.6B
+      - GPU_ENABLED=true
+      - LLM_GPU_UTILIZATION=0.8
+      # - LLM_CONTEXT_SIZE=4096  # Fallback if GPU utilization sizing is disabled
+      - EMBEDDING_ON_CPU=false
+    devices:
+      - nvidia.com/gpu=all
     depends_on:
       oort-db:
         condition: service_healthy
@@ -70,36 +80,6 @@ services: # New Backend Rust service
     depends_on:
       - oort-ml
 
-  # Ollama service for embeddings and LLM
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    command: "serve"
-
-  ollama-init:
-    image: ollama/ollama:latest
-    depends_on:
-      - ollama
-    restart: "no"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        until ollama list >/dev/null 2>&1; do sleep 2; done
-        ollama pull phi3.5
-        ollama pull snowflake-arctic-embed2
-    environment:
-      - OLLAMA_HOST=http://ollama:11434
-    
   grafana:
     image: grafana/grafana-oss
     container_name: grafana
@@ -107,7 +87,7 @@ services: # New Backend Rust service
     environment:
       - TERM=linux
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-polystat-panel,hadesarchitect-cassandra-datasource
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin 
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_BASIC_ENABLED=false
     ports:
@@ -119,10 +99,10 @@ services: # New Backend Rust service
 
 
 volumes:
-  ollama_data:
   rust_target_cache:
   cassandra_data:
   grafana_storage: {}
+  hf_cache:
 
 secrets:
   github_token:

@@ -12,6 +12,7 @@ mod error;
 use crate::controllers::text_processing::{process_text, get_texts_by_concept, save_scene, get_scene, AppState};
 use crate::models::concepts::ConceptsModel;
 use crate::models::embeddings::EmbeddingModel;
+use crate::models::inference::{InferenceConfig, MistralRsLlm, MistralRsEmbedding};
 use crate::data::client::DatabaseClient;
 use crate::data::scraper::ArticleScraper;
 
@@ -37,20 +38,48 @@ async fn preload_models(concepts_model: &ConceptsModel, embedding_model: &Embedd
 async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
 
+    eprintln!("=== oort-ml starting ===");
+
     let host = "0.0.0.0";
     let port = 8000;
-    let ollama_base_url =
-        std::env::var("OLLAMA_URL").unwrap_or_else(|_| "http://ollama:11434".to_string());
-    let db_nodes = std::env::var("DB_NODES").unwrap_or_else(|_| "oort-db:9042".to_string());
+    let db_nodes_str = std::env::var("DB_NODES").unwrap_or_else(|_| "oort-db:9042".to_string());
 
     info!("Starting server at {}:{}", host, port);
-    info!("Using Ollama at: {}", ollama_base_url);
-    info!("Using Database nodes: {}", db_nodes);
+    info!("Using Database nodes: {}", db_nodes_str);
 
-    let concepts_model = Arc::new(ConceptsModel::new(&ollama_base_url));
-    let embedding_model = Arc::new(EmbeddingModel::new(&ollama_base_url));
+    // Load inference backends
+    let config = InferenceConfig::from_env();
+    info!("Loading LLM model: {} ({:?})", config.llm_model, config.llm_gguf_files);
+    info!("Loading embedding model: {}", config.embedding_model);
 
-    let db_nodes: Vec<&str> = db_nodes.split(',').collect();
+    // Load embedding model FIRST so the LLM's Utilization-based KV cache sizing
+    // accounts for the embedding model's ~0.6GB already on GPU.
+    let embedding_backend = match MistralRsEmbedding::new(&config).await {
+        Ok(backend) => {
+            info!("Embedding model loaded successfully");
+            Arc::new(backend)
+        }
+        Err(e) => {
+            eprintln!("FATAL: Failed to load embedding model: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let llm_backend = match MistralRsLlm::new(&config).await {
+        Ok(backend) => {
+            info!("LLM model loaded successfully");
+            Arc::new(backend)
+        }
+        Err(e) => {
+            eprintln!("FATAL: Failed to load LLM model: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    let concepts_model = Arc::new(ConceptsModel::new(llm_backend));
+    let embedding_model = Arc::new(EmbeddingModel::new(embedding_backend));
+
+    let db_nodes: Vec<&str> = db_nodes_str.split(',').collect();
     let db_client = Arc::new(
         DatabaseClient::new(&db_nodes)
             .await

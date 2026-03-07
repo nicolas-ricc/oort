@@ -118,6 +118,10 @@ Returns text references containing the concept.
 - **Cassandra** (`data/client.rs`) - User concepts and text references
 - **GitHub CDN** (`data/cdn/github.rs`) - Uploaded text files served via jsDelivr
 
+## GPU Memory Management
+
+**Critical**: Model loading order in `main.rs` matters. The embedding model (~0.6GB) must load **before** the LLM (~2.6GB) so that the LLM's `Utilization`-based KV cache sizing sees VRAM already consumed and sizes accordingly. Default utilization is `0.8` (set via `LLM_GPU_UTILIZATION`), leaving ~1.6GB free for inference temporaries on an 8GB GPU (RTX 3070). LLM and embedding inference are strictly sequential in the pipeline, so both models can coexist on GPU. See `~/.claude/projects/-home-nicolasr-Projects-oort/memory/gpu-memory.md` for full analysis.
+
 ## Environment Variables
 
 | Variable | Default | Description |
@@ -127,6 +131,8 @@ Returns text references containing the concept.
 | GITHUB_TOKEN_FILE | - | Path to GitHub token for CDN |
 | GITHUB_OWNER | - | GitHub username for CDN repo |
 | RUST_LOG | info | Log level |
+| LLM_GPU_UTILIZATION | 0.8 | GPU memory fraction for paged attention KV cache (0.0-1.0) |
+| EMBEDDING_ON_CPU | false | Force embedding model to CPU (`true` for tight GPU memory) |
 
 ## Error Handling
 
