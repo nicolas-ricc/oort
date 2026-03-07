@@ -1,12 +1,27 @@
 use crate::error::ApiError;
 use crate::models::concepts::nlp::CandidateKeyword;
+use crate::models::inference::{GenerationParams, LlmBackend};
 use futures::future::join_all;
 use log::{debug, info};
 use regex::Regex;
-use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::sync::Arc;
+use tokio::sync::Semaphore;
+
+/// Max text chars in a single LLM call.
+/// Conservative budget assuming 4096 context minimum:
+/// (4096 - 512 output - 500 prompt overhead) * 3.5 chars/tok ≈ 10,794
+const MAX_TEXT_CHARS: usize = 10_000;
+
+/// Chunk size for MapReduce splitting.
+const CHUNK_SIZE_CHARS: usize = 6000;
+
+/// Overlap between consecutive chunks.
+const CHUNK_OVERLAP_CHARS: usize = 500;
+
+/// Max concurrent LLM calls (leverages prefix caching for shared prompts).
+const LLM_CONCURRENCY: usize = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Concept {
@@ -14,45 +29,13 @@ pub struct Concept {
     pub importance: f32,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct OllamaRequest {
-    model: String,
-    prompt: String,
-    system: String,
-    options: OllamaOptions,
-    format: serde_json::Value,
-    stream: bool,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct OllamaOptions {
-    temperature: f32,
-    num_ctx: u32,
-}
-
-#[derive(Debug, Deserialize)]
-struct OllamaResponse {
-    response: String,
-}
-
 pub struct ConceptsModel {
-    base_url: String,
-    client: Client,
-    model: String,
+    backend: Arc<dyn LlmBackend>,
 }
 
 impl ConceptsModel {
-    pub fn new(base_url: &str) -> Self {
-        let client: Client = Client::builder()
-            .timeout(Duration::from_secs(120))
-            .build()
-            .expect("Failed to create HTTP client");
-
-        Self {
-            base_url: base_url.to_string(),
-            client,
-            model: "phi3.5".to_string(),
-        }
+    pub fn new(backend: Arc<dyn LlmBackend>) -> Self {
+        Self { backend }
     }
 
     pub fn clean_text(&self, text: &str) -> String {
@@ -90,12 +73,7 @@ impl ConceptsModel {
         hints
     }
 
-    fn compute_num_ctx(text_len: usize) -> u32 {
-        let estimated_tokens = text_len / 3;
-        std::cmp::max(4096, (estimated_tokens + 1024) as u32)
-    }
-
-    /// Core LLM call: sends text to Ollama and returns extracted concepts.
+    /// Core LLM call: sends text to the backend and returns extracted concepts.
     async fn call_llm(&self, text: &str, candidate_hints: &str) -> Result<Vec<Concept>, ApiError> {
         let system_prompt = format!(
             r#"You are a concept extractor that identifies the core intellectual themes in a text.
@@ -112,13 +90,13 @@ Given a text and statistically-identified candidate keywords:
 Output ONLY valid JSON matching the required schema."#
         );
 
-        let template = format!(
+        let user_prompt = format!(
             "Extract the key concepts from this text. Rate each concept's importance from 0.0 to 1.0:\n\n{}",
             text
         );
 
         // JSON schema for structured output: { concepts: [{ name: string, importance: number }] }
-        let format: serde_json::Value = serde_json::json!({
+        let json_schema: serde_json::Value = serde_json::json!({
             "type": "object",
             "properties": {
                 "concepts": {
@@ -136,46 +114,22 @@ Output ONLY valid JSON matching the required schema."#
             "required": ["concepts"]
         });
 
-        let num_ctx = Self::compute_num_ctx(text.len());
-        info!("Requesting concepts using model: {} (num_ctx: {})", self.model, num_ctx);
+        info!("Requesting concepts using model: {}", self.backend.model_id());
 
-        let request = OllamaRequest {
-            model: self.model.clone(),
-            prompt: template,
-            system: system_prompt,
-            options: OllamaOptions { temperature: 0.0, num_ctx },
-            format,
-            stream: false,
+        let params = GenerationParams {
+            temperature: 0.0,
+            max_tokens: Some(512),
+            json_schema: Some(json_schema),
         };
 
-        let url = format!("{}/api/generate", self.base_url);
-        debug!("Sending request to: {}", url);
-        info!("Request body: {:?}", request);
-
         let response = self
-            .client
-            .post(url)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| {
-                info!("Error requesting concepts: {}", e);
-                ApiError::RequestError(e)
-            })?;
+            .backend
+            .generate(&system_prompt, &user_prompt, &params)
+            .await?;
 
-        let body: String = response.text().await.map_err(|e| {
-            info!("Error extracting response text: {}", e);
-            ApiError::RequestError(e)
-        })?;
+        info!("Raw response: {}", response);
 
-        info!("Raw response: {}", body);
-
-        let ollama_response: OllamaResponse = serde_json::from_str(&body).map_err(|e| {
-            info!("Error parsing response JSON: {}", e);
-            ApiError::InternalError(format!("JSON parse error: {}", e))
-        })?;
-
-        self.parse_concepts_response(&ollama_response.response)
+        self.parse_concepts_response(&response)
     }
 
     fn parse_concepts_response(&self, response: &str) -> Result<Vec<Concept>, ApiError> {
@@ -265,26 +219,184 @@ Output ONLY valid JSON matching the required schema."#
     ) -> Result<Vec<Concept>, ApiError> {
         let candidate_hints = Self::build_candidate_hints(nlp_candidates);
 
-        if text.len() < 6000 {
+        if text.len() < MAX_TEXT_CHARS {
             // Short text: single LLM call with full text (no truncation)
             self.call_llm(text, &candidate_hints).await
         } else {
             // Long text: MapReduce — split into chunks, extract from each, merge
-            info!("Text length {} exceeds 6000 chars, using MapReduce chunking", text.len());
-            let chunks = super::truncation::chunk_text(text, 2000, 200);
-            info!("Split into {} chunks", chunks.len());
+            info!("Text length {} exceeds {} chars, using MapReduce chunking", text.len(), MAX_TEXT_CHARS);
+            let chunks = super::truncation::chunk_text(text, CHUNK_SIZE_CHARS, CHUNK_OVERLAP_CHARS);
+            let total = chunks.len();
+            info!("Split into {} chunks", total);
 
+            let semaphore = Arc::new(Semaphore::new(LLM_CONCURRENCY));
             let futures: Vec<_> = chunks
                 .iter()
-                .map(|chunk| self.call_llm(chunk, &candidate_hints))
+                .enumerate()
+                .map(|(i, chunk)| {
+                    let sem = Arc::clone(&semaphore);
+                    let chunk = chunk.clone();
+                    let hints = candidate_hints.clone();
+                    async move {
+                        let _permit = sem.acquire().await.unwrap();
+                        info!("Processing chunk {}/{} ({} chars)", i + 1, total, chunk.len());
+                        self.call_llm(&chunk, &hints).await
+                    }
+                })
                 .collect();
             let results = join_all(futures).await;
             let chunk_concepts: Result<Vec<Vec<Concept>>, ApiError> =
                 results.into_iter().collect();
             let merged = Self::merge_chunk_concepts(chunk_concepts?);
 
-            debug!("Merged {} unique concepts from {} chunks", merged.len(), chunks.len());
+            debug!("Merged {} unique concepts from {} chunks", merged.len(), total);
             Ok(merged)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::inference::test_helpers::MockLlmBackend;
+
+    fn make_model(response: &str) -> ConceptsModel {
+        ConceptsModel::new(Arc::new(MockLlmBackend {
+            response: response.to_string(),
+            should_fail: false,
+        }))
+    }
+
+    fn make_failing_model() -> ConceptsModel {
+        ConceptsModel::new(Arc::new(MockLlmBackend {
+            response: String::new(),
+            should_fail: true,
+        }))
+    }
+
+    #[tokio::test]
+    async fn test_generate_concepts_short_text() {
+        let model = make_model(r#"{"concepts": [{"name": "machine learning", "importance": 0.9}, {"name": "neural networks", "importance": 0.7}]}"#);
+
+        let result = model.generate_concepts("Machine learning uses neural networks.", &[]).await;
+        assert!(result.is_ok());
+        let concepts = result.unwrap();
+        assert_eq!(concepts.len(), 2);
+        assert!(concepts.iter().any(|c| c.concept == "machine learning"));
+        assert!(concepts.iter().any(|c| c.concept == "neural networks"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_concepts_long_text_mapreduce() {
+        // Generate text exceeding MAX_TEXT_CHARS (10,000)
+        let long_text = "Machine learning is transforming the world. ".repeat(300);
+        assert!(long_text.len() > 10000);
+
+        let model = make_model(
+            r#"{"concepts": [{"name": "machine learning", "importance": 0.9}]}"#,
+        );
+
+        let result = model.generate_concepts(&long_text, &[]).await;
+        assert!(result.is_ok());
+        let concepts = result.unwrap();
+        // MapReduce should merge duplicates from chunks
+        assert_eq!(concepts.len(), 1);
+        assert_eq!(concepts[0].concept, "machine learning");
+    }
+
+    #[tokio::test]
+    async fn test_generate_concepts_llm_failure() {
+        let model = make_failing_model();
+        let result = model.generate_concepts("Some text.", &[]).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_generate_concepts_empty_response() {
+        let model = make_model(r#"{"concepts": []}"#);
+        let result = model.generate_concepts("Some text.", &[]).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_generate_concepts_malformed_json() {
+        let model = make_model("not valid json at all");
+        let result = model.generate_concepts("Some text.", &[]).await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_concepts_response_valid() {
+        let model = make_model("");
+        let response = r#"{"concepts": [{"name": "AI", "importance": 0.9}, {"name": "ML", "importance": 0.7}]}"#;
+        let result = model.parse_concepts_response(response);
+        assert!(result.is_ok());
+        let concepts = result.unwrap();
+        assert_eq!(concepts.len(), 2);
+        assert_eq!(concepts[0].concept, "AI");
+        assert!((concepts[0].importance - 0.9).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_parse_concepts_response_mixed_formats() {
+        let model = make_model("");
+        let response = r#"{"concepts": [{"name": "AI", "importance": 0.9}, "plain string concept"]}"#;
+        let result = model.parse_concepts_response(response);
+        assert!(result.is_ok());
+        let concepts = result.unwrap();
+        assert_eq!(concepts.len(), 2);
+        assert!(concepts.iter().any(|c| c.concept == "AI"));
+        assert!(concepts.iter().any(|c| c.concept == "plain string concept" && c.importance == 0.5));
+    }
+
+    #[test]
+    fn test_parse_concepts_filters_long_phrases() {
+        let model = make_model("");
+        let response = r#"{"concepts": [{"name": "this is a very long phrase", "importance": 0.5}, {"name": "short", "importance": 0.8}]}"#;
+        let result = model.parse_concepts_response(response);
+        assert!(result.is_ok());
+        let concepts = result.unwrap();
+        // "this is a very long phrase" has 6 words, should be filtered
+        assert_eq!(concepts.len(), 1);
+        assert_eq!(concepts[0].concept, "short");
+    }
+
+    #[test]
+    fn test_build_candidate_hints_empty() {
+        let hints = ConceptsModel::build_candidate_hints(&[]);
+        assert!(hints.is_empty());
+    }
+
+    #[test]
+    fn test_build_candidate_hints_truncates_to_20() {
+        let candidates: Vec<CandidateKeyword> = (0..30)
+            .map(|i| CandidateKeyword {
+                phrase: format!("keyword_{}", i),
+                score: 1.0 - (i as f32 * 0.03),
+            })
+            .collect();
+
+        let hints = ConceptsModel::build_candidate_hints(&candidates);
+        // Should only include first 20
+        assert!(hints.contains("keyword_19"));
+        assert!(!hints.contains("keyword_20"));
+    }
+
+    #[test]
+    fn test_merge_chunk_concepts_deduplicates() {
+        let chunk1 = vec![
+            Concept { concept: "AI".to_string(), importance: 0.8 },
+            Concept { concept: "ML".to_string(), importance: 0.6 },
+        ];
+        let chunk2 = vec![
+            Concept { concept: "ai".to_string(), importance: 0.9 }, // same as AI, higher importance
+            Concept { concept: "robotics".to_string(), importance: 0.5 },
+        ];
+
+        let merged = ConceptsModel::merge_chunk_concepts(vec![chunk1, chunk2]);
+        assert_eq!(merged.len(), 3); // AI, ML, robotics
+        let ai = merged.iter().find(|c| c.concept.to_lowercase() == "ai").unwrap();
+        assert!((ai.importance - 0.9).abs() < 0.01); // kept higher importance
     }
 }

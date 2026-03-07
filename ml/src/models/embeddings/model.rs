@@ -1,106 +1,140 @@
 use crate::error::ApiError;
-use futures::future::join_all;
-use log::{debug, info};
-use ndarray::{Array1, ArrayBase, Dim, OwnedRepr};
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
-use std::time::Duration;
+use crate::models::inference::EmbeddingBackend;
+use log::info;
+use ndarray::Array1;
+use std::sync::Arc;
 
 pub type Embedding = Array1<f32>;
 
-#[derive(Debug, Serialize)]
-struct EmbeddingRequest {
-    model: String,
-    prompt: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct EmbeddingResponse {
-    embedding: Vec<f32>,
-}
-
 pub struct EmbeddingModel {
-    base_url: String,
-    client: Client,
-    model_name: String,
+    backend: Arc<dyn EmbeddingBackend>,
 }
 
 impl EmbeddingModel {
-    pub fn new(base_url: &str) -> Self {
-        let client = Client::builder()
-            .timeout(Duration::from_secs(30))
-            .build()
-            .expect("Failed to create HTTP client");
-
-        Self {
-            base_url: base_url.to_string(),
-            client,
-            model_name: "snowflake-arctic-embed2".to_string(),
-        }
+    pub fn new(backend: Arc<dyn EmbeddingBackend>) -> Self {
+        Self { backend }
     }
 
     pub async fn get_batch_embeddings(&self, texts: &[String]) -> Result<Vec<Embedding>, ApiError> {
-        let valid_texts: Vec<&str> = texts
+        let valid_texts: Vec<String> = texts
             .iter()
-            .map(|t| t.trim())
+            .map(|t| t.trim().to_string())
             .filter(|t| !t.is_empty())
             .collect();
 
         info!(
-            "Generating embeddings for {} concepts concurrently",
+            "Generating embeddings for {} concepts",
             valid_texts.len()
         );
 
-        let futures: Vec<_> = valid_texts
-            .iter()
-            .map(|&text| self.get_contextual_embeddings(text))
-            .collect();
+        let embeddings = self.backend.embed_batch(&valid_texts).await?;
 
-        let results = join_all(futures).await;
-        results.into_iter().collect()
+        Ok(embeddings
+            .into_iter()
+            .map(|v| Array1::from(v))
+            .collect())
     }
 
     pub async fn get_contextual_embeddings(&self, text: &str) -> Result<Embedding, ApiError> {
-        if text.is_empty() {
+        if text.trim().is_empty() {
             return Err(ApiError::InternalError("Empty text provided".to_string()));
         }
 
-        let request: EmbeddingRequest = EmbeddingRequest {
-            model: self.model_name.clone(),
-            prompt: text.to_string(),
-        };
+        let embedding = self.backend.embed(text).await?;
+        Ok(Array1::from(embedding))
+    }
+}
 
-        let url: String = format!("{}/api/embeddings", self.base_url);
-        debug!("Sending request to: {}", url);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::inference::test_helpers::MockEmbeddingBackend;
 
-        let response: reqwest::Response = self
-            .client
-            .post(url)
-            .json(&request)
-            .send()
-            .await
-            .map_err(|e| {
-                info!("Error requesting embeddings: {}", e);
-                ApiError::RequestError(e)
-            })?;
-
-        if !response.status().is_success() {
-            let status: reqwest::StatusCode = response.status();
-            let body: String = response.text().await.unwrap_or_default();
-            return Err(ApiError::InternalError(format!(
-                "Error {}: {}",
-                status, body
-            )));
-        }
-
-        let embedding_response: EmbeddingResponse = response.json().await.map_err(|e| {
-            info!("Error parsing embedding response: {}", e);
-            ApiError::RequestError(e)
-        })?;
-
-        let embedding: ArrayBase<OwnedRepr<f32>, Dim<[usize; 1]>> =
-            Array1::from(embedding_response.embedding);
-        Ok(embedding)
+    fn make_model(dim: usize) -> EmbeddingModel {
+        EmbeddingModel::new(Arc::new(MockEmbeddingBackend {
+            embedding: vec![0.1; dim],
+            dim,
+            should_fail: false,
+        }))
     }
 
+    fn make_failing_model() -> EmbeddingModel {
+        EmbeddingModel::new(Arc::new(MockEmbeddingBackend {
+            embedding: vec![],
+            dim: 0,
+            should_fail: true,
+        }))
+    }
+
+    #[tokio::test]
+    async fn test_get_contextual_embeddings_success() {
+        let model = make_model(128);
+        let result = model.get_contextual_embeddings("test text").await;
+        assert!(result.is_ok());
+        let embedding = result.unwrap();
+        assert_eq!(embedding.len(), 128);
+    }
+
+    #[tokio::test]
+    async fn test_get_contextual_embeddings_empty_text() {
+        let model = make_model(128);
+        let result = model.get_contextual_embeddings("").await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_batch_embeddings_success() {
+        let model = make_model(128);
+        let texts = vec![
+            "first text".to_string(),
+            "second text".to_string(),
+            "third text".to_string(),
+        ];
+        let result = model.get_batch_embeddings(&texts).await;
+        assert!(result.is_ok());
+        let embeddings = result.unwrap();
+        assert_eq!(embeddings.len(), 3);
+        assert!(embeddings.iter().all(|e| e.len() == 128));
+    }
+
+    #[tokio::test]
+    async fn test_get_batch_embeddings_filters_empty() {
+        let model = make_model(128);
+        let texts = vec![
+            "valid text".to_string(),
+            "".to_string(),
+            "  ".to_string(),
+            "another valid".to_string(),
+        ];
+        let result = model.get_batch_embeddings(&texts).await;
+        assert!(result.is_ok());
+        let embeddings = result.unwrap();
+        // Empty and whitespace-only strings should be filtered out
+        assert_eq!(embeddings.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_get_batch_embeddings_backend_failure() {
+        let model = make_failing_model();
+        let texts = vec!["text".to_string()];
+        let result = model.get_batch_embeddings(&texts).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_embedding_dimension_consistency() {
+        let model = make_model(256);
+        let texts = vec![
+            "first".to_string(),
+            "second".to_string(),
+            "third".to_string(),
+        ];
+        let result = model.get_batch_embeddings(&texts).await;
+        assert!(result.is_ok());
+        let embeddings = result.unwrap();
+        // All embeddings should have the same dimension
+        let dim = embeddings[0].len();
+        assert!(embeddings.iter().all(|e| e.len() == dim));
+        assert_eq!(dim, 256);
+    }
 }

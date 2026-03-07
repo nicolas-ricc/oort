@@ -34,7 +34,10 @@ stop-words = "0.9"
 dom_smoothie = "0.6"
 dom_query = "0.14"
 nanoid = "0.4"
+mistralrs = "0.7"
+async-trait = "0.1"
 
 [features]
 default = []
 full-nlp = []
+cuda = ["mistralrs/cuda"]

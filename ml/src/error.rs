@@ -22,6 +22,9 @@ pub enum ApiError {
     #[error("Error in dimensionality reduction: {0}")]
     DimensionalityError(String),
     
+    #[error("Inference error: {0}")]
+    InferenceError(#[from] crate::models::inference::InferenceError),
+
     #[error("Internal server error: {0}")]
     InternalError(String),
 
@@ -56,5 +59,38 @@ impl ResponseError for ApiError {
             success: false,
             detail: self.to_string(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::inference::InferenceError;
+    use actix_web::body::MessageBody;
+
+    #[test]
+    fn test_inference_error_to_api_error() {
+        let inference_err = InferenceError::InferenceFailed("test failure".into());
+        let api_err: ApiError = inference_err.into();
+        match api_err {
+            ApiError::InferenceError(_) => {} // correct variant
+            other => panic!("Expected InferenceError variant, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_inference_error_response_status() {
+        let inference_err = InferenceError::InferenceFailed("test".into());
+        let api_err: ApiError = inference_err.into();
+        let response = api_err.error_response();
+        assert_eq!(response.status(), actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn test_model_load_error_message() {
+        let inference_err = InferenceError::ModelLoadError("GPU not found".into());
+        let api_err: ApiError = inference_err.into();
+        let msg = api_err.to_string();
+        assert!(msg.contains("GPU not found"), "Expected error message to contain 'GPU not found', got: {}", msg);
     }
 }
