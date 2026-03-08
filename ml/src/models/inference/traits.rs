@@ -20,6 +20,8 @@ pub struct GenerationParams {
     pub temperature: f32,
     pub max_tokens: Option<u32>,
     pub json_schema: Option<serde_json::Value>,
+    pub frequency_penalty: Option<f32>,
+    pub dry_multiplier: Option<f32>,
 }
 
 #[async_trait]

@@ -8,6 +8,9 @@ pub struct InferenceConfig {
     /// GPU memory utilization for paged attention (0.0-1.0). When set, overrides `llm_context_size`.
     pub llm_gpu_utilization: Option<f32>,
     pub embedding_force_cpu: bool,
+    /// Enable LLM theme enrichment in the concept extraction pipeline.
+    /// When false, only NLP (RAKE+TF-IDF) + embedding validation is used.
+    pub llm_enrichment: bool,
 }
 
 impl InferenceConfig {
@@ -36,12 +39,15 @@ impl InferenceConfig {
 
         let llm_gpu_utilization = std::env::var("LLM_GPU_UTILIZATION")
             .ok()
-            .and_then(|v| v.parse::<f32>().ok())
-            .or(Some(0.8));
+            .and_then(|v| v.parse::<f32>().ok());
 
         let embedding_force_cpu = std::env::var("EMBEDDING_ON_CPU")
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
+
+        let llm_enrichment = std::env::var("LLM_ENRICHMENT")
+            .map(|v| v != "false" && v != "0")
+            .unwrap_or(true);
 
         Self {
             llm_model,
@@ -51,6 +57,7 @@ impl InferenceConfig {
             llm_context_size,
             llm_gpu_utilization,
             embedding_force_cpu,
+            llm_enrichment,
         }
     }
 }
@@ -70,6 +77,7 @@ mod tests {
         env::remove_var("LLM_CONTEXT_SIZE");
         env::remove_var("LLM_GPU_UTILIZATION");
         env::remove_var("EMBEDDING_ON_CPU");
+        env::remove_var("LLM_ENRICHMENT");
 
         let config = InferenceConfig::from_env();
 
@@ -78,8 +86,9 @@ mod tests {
         assert_eq!(config.embedding_model, "Qwen/Qwen3-Embedding-0.6B");
         assert!(config.use_gpu);
         assert_eq!(config.llm_context_size, 4096);
-        assert_eq!(config.llm_gpu_utilization, Some(0.8));
+        assert_eq!(config.llm_gpu_utilization, None);
         assert!(!config.embedding_force_cpu);
+        assert!(config.llm_enrichment);
     }
 
     #[test]

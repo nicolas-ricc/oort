@@ -28,12 +28,15 @@ ArticleScraper::scrape_url()              # data/scraper.rs (URL input only)
 KeywordExtractor::extract_candidates()    # models/concepts/nlp.rs
     ↓ (RAKE + TF-IDF on full text, top 20 candidates)
 ConceptsModel::generate_concepts()        # models/concepts/model.rs
-    ↓ Adaptive strategy:
-    │   < 6000 chars: single LLM call with full text
-    │   ≥ 6000 chars: MapReduce (chunk_text → parallel LLM calls → merge)
-    ↓ (Ollama phi3.5, num_ctx scaled to text length, NLP candidates as hints)
+    ↓ Hybrid NLP + guarded LLM pipeline:
+    │   1. validate_candidates_with_embeddings() — embed candidates + source text,
+    │      keep candidates with cosine similarity ≥ 0.3 (NLP baseline, always works)
+    │   2. try_llm_enrichment() — send NLP candidates + 500-char excerpt to LLM
+    │      for 3-5 overarching themes (optional, with degenerate output detection)
+    │   3. merge_nlp_and_llm() — deduplicate, NLP takes priority, cap at 15
+    ↓ (LLM failure is non-fatal → falls back to NLP-only concepts)
 EmbeddingModel::get_batch_embeddings()    # models/embeddings/model.rs
-    ↓ (Ollama snowflake-arctic-embed2, concurrent via join_all)
+    ↓ (concurrent via join_all)
 MindMapProcessor::process_concepts()      # dimensionality.rs
     ├── merge_similar_concepts()          # Union-Find, cosine similarity > 0.7
     ├── build_similarity_matrix()         # Continuous (no threshold), all positive similarities
@@ -44,11 +47,15 @@ ConceptGroup[] with 3D positions + group_id
 ```
 
 ### NLP Pre-processing (`models/concepts/nlp.rs`)
-`KeywordExtractor` runs RAKE + TF-IDF on the **full text** before the LLM call, providing statistical keyword candidates as hints in the phi3.5 system prompt.
+`KeywordExtractor` runs RAKE + TF-IDF on the **full text**, producing statistical keyword candidates that serve as the primary concept source.
 
-### Adaptive Concept Extraction (`models/concepts/model.rs`)
-- **Short texts (< 6000 chars):** Full text sent directly to LLM in a single call. `num_ctx` scaled dynamically: `max(4096, text_len/3 + 1024)`.
-- **Long texts (≥ 6000 chars):** MapReduce strategy — `chunk_text()` splits into ~2000-char overlapping chunks at sentence boundaries, each chunk processed in parallel via `join_all`, results deduplicated by normalized name (highest importance wins). Downstream Union-Find merge handles semantic deduplication.
+### Hybrid Concept Extraction (`models/concepts/model.rs`)
+The pipeline uses NLP as the primary extractor with the LLM demoted to an optional theme enricher:
+1. **NLP + Embedding validation:** NLP candidates are validated against the source text using embedding cosine similarity (≥ 0.3 threshold). Score = 50% NLP + 50% similarity. Always produces results.
+2. **Guarded LLM enrichment** (optional, controlled by `LLM_ENRICHMENT` env var): NLP candidates + 500-char text excerpt sent to LLM for 3-5 overarching themes. Uses `frequency_penalty=1.5` + `dry_multiplier=0.8` to prevent repetition loops. Degenerate output detected via sliding 8-char window (>5 repeats) and missing closing brace. On degeneration, retries once with stronger penalties (`frequency_penalty=2.0`, `dry_multiplier=1.2`, `temperature=0.1`). Failure is non-fatal — falls back to NLP-only concepts.
+3. **Merge:** NLP concepts + LLM themes deduplicated case-insensitively (NLP takes priority), capped at 15.
+
+No chunking needed: NLP runs on full text, LLM receives candidates + brief excerpt (~400 tokens total).
 
 ### Text Chunking (`models/concepts/truncation.rs`)
 `chunk_text(text, chunk_size, overlap)` splits text into overlapping chunks at natural boundaries. Uses `find_last_boundary()` with tiered fallback: sentence end > paragraph break > markdown heading > newline > word boundary. `truncate_at_sentence_boundary()` also uses the same boundary detection. Filters abbreviations (Dr., U.S., etc.) and is UTF-8 safe.
@@ -120,7 +127,7 @@ Returns text references containing the concept.
 
 ## GPU Memory Management
 
-**Critical**: Model loading order in `main.rs` matters. The embedding model (~0.6GB) must load **before** the LLM (~2.6GB) so that the LLM's `Utilization`-based KV cache sizing sees VRAM already consumed and sizes accordingly. Default utilization is `0.8` (set via `LLM_GPU_UTILIZATION`), leaving ~1.6GB free for inference temporaries on an 8GB GPU (RTX 3070). LLM and embedding inference are strictly sequential in the pipeline, so both models can coexist on GPU. See `~/.claude/projects/-home-nicolasr-Projects-oort/memory/gpu-memory.md` for full analysis.
+**Critical**: Model loading order in `main.rs` matters. The embedding model (~0.6GB) must load **before** the LLM (~2.6GB). KV cache is sized via `MemoryGpuConfig::ContextSize(4096)` by default (set via `LLM_CONTEXT_SIZE`), allocating KV for 4096 tokens (~1.5 GB). Phi-3.5-mini uses standard MHA (32 KV heads), so KV cost is ~384 KB/token. Total VRAM: ~4.7 GB on RTX 3070 (8GB), leaving ~3.3 GB free. `LLM_CONCURRENCY=1` ensures only one sequence at a time. `LLM_GPU_UTILIZATION` is available as an advanced override for Utilization-based sizing. LLM and embedding inference are strictly sequential in the pipeline, so both models can coexist on GPU. See `~/.claude/projects/-home-nicolasr-Projects-oort/memory/gpu-memory.md` for full analysis.
 
 ## Environment Variables
 
@@ -131,8 +138,10 @@ Returns text references containing the concept.
 | GITHUB_TOKEN_FILE | - | Path to GitHub token for CDN |
 | GITHUB_OWNER | - | GitHub username for CDN repo |
 | RUST_LOG | info | Log level |
-| LLM_GPU_UTILIZATION | 0.8 | GPU memory fraction for paged attention KV cache (0.0-1.0) |
+| LLM_CONTEXT_SIZE | 4096 | KV cache token capacity |
+| LLM_GPU_UTILIZATION | (unset) | GPU memory fraction for KV cache, overrides `LLM_CONTEXT_SIZE` when set (0.0-1.0) |
 | EMBEDDING_ON_CPU | false | Force embedding model to CPU (`true` for tight GPU memory) |
+| LLM_ENRICHMENT | true | Enable LLM theme enrichment (`false` for NLP-only mode) |
 
 ## Error Handling
 

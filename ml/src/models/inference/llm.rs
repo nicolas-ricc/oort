@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use log::info;
+use std::time::Duration;
 use mistralrs::{
-    Constraint, GgufModelBuilder, MemoryGpuConfig, Model, PagedAttentionMetaBuilder,
-    RequestBuilder, TextMessageRole,
+    Constraint, DrySamplingParams, GgufModelBuilder, MemoryGpuConfig, Model,
+    PagedAttentionMetaBuilder, RequestBuilder, TextMessageRole,
 };
 
 use super::config::InferenceConfig;
@@ -77,15 +78,27 @@ impl LlmBackend for MistralRsLlm {
             request = request.set_sampler_max_len(max_tokens as usize);
         }
 
+        if let Some(fp) = params.frequency_penalty {
+            request = request.set_sampler_frequency_penalty(fp);
+        }
+
+        if let Some(dry_mult) = params.dry_multiplier {
+            if let Ok(dry_params) = DrySamplingParams::new_with_defaults(dry_mult, None, None, None) {
+                request = request.set_sampler_dry_params(dry_params);
+            }
+        }
+
         if let Some(ref schema) = params.json_schema {
             request = request.set_constraint(Constraint::JsonSchema(schema.clone()));
         }
 
-        let response = self
-            .model
-            .send_chat_request(request)
-            .await
-            .map_err(|e| InferenceError::InferenceFailed(e.to_string()))?;
+        let response = tokio::time::timeout(
+            Duration::from_secs(120),
+            self.model.send_chat_request(request),
+        )
+        .await
+        .map_err(|_| InferenceError::InferenceFailed("LLM generation timed out after 120 seconds".into()))?
+        .map_err(|e| InferenceError::InferenceFailed(e.to_string()))?;
 
         response
             .choices
@@ -102,10 +115,13 @@ impl LlmBackend for MistralRsLlm {
             .set_deterministic_sampler()
             .set_sampler_max_len(1);
 
-        self.model
-            .send_chat_request(request)
-            .await
-            .map_err(|e| InferenceError::InferenceFailed(e.to_string()))?;
+        tokio::time::timeout(
+            Duration::from_secs(60),
+            self.model.send_chat_request(request),
+        )
+        .await
+        .map_err(|_| InferenceError::InferenceFailed("LLM warmup timed out after 60 seconds".into()))?
+        .map_err(|e| InferenceError::InferenceFailed(e.to_string()))?;
         Ok(())
     }
 

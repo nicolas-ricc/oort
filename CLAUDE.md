@@ -104,7 +104,7 @@ docker-compose up oort-db    # Start Cassandra
 
 ## GPU Memory Management
 
-The ML backend loads two models onto the GPU: the LLM (~2.6GB) and the embedding model (~0.6GB). **Model loading order matters**: the embedding model must load before the LLM so that the LLM's `Utilization`-based KV cache sizing accounts for VRAM already consumed. Default utilization is `0.8`, leaving ~1.6GB free for inference temporaries on an 8GB GPU. See `~/.claude/projects/-home-nicolasr-Projects-oort/memory/gpu-memory.md` for detailed analysis and alternative strategies.
+The ML backend loads two models onto the GPU: the LLM (~2.6GB) and the embedding model (~0.6GB). **Model loading order matters**: the embedding model must load before the LLM. KV cache is sized via `MemoryGpuConfig::ContextSize(4096)` by default, which allocates KV cache for 4096 tokens (~1.5 GB). Phi-3.5-mini uses standard MHA (32 KV heads, not GQA), so KV cost is ~384 KB/token. Total VRAM: ~0.6 (embed) + ~2.6 (LLM) + ~1.5 (KV) ≈ 4.7 GB, leaving ~3.3 GB free on an 8GB GPU. `LLM_GPU_UTILIZATION` is available as an advanced override for Utilization-based sizing. See `~/.claude/projects/-home-nicolasr-Projects-oort/memory/gpu-memory.md` for detailed analysis.
 
 ## Environment Variables
 
@@ -113,8 +113,10 @@ The ML backend loads two models onto the GPU: the LLM (~2.6GB) and the embedding
 - `GITHUB_TOKEN_FILE` - Path to GitHub token for CDN uploads
 - `GITHUB_OWNER` - GitHub username for CDN repository
 - `RUST_LOG` - Logging level (default: `info`)
-- `LLM_GPU_UTILIZATION` - GPU memory fraction for KV cache (default: `0.8`, range 0.0-1.0)
+- `LLM_CONTEXT_SIZE` - KV cache token capacity (default: `4096`)
+- `LLM_GPU_UTILIZATION` - GPU memory fraction for KV cache, overrides `LLM_CONTEXT_SIZE` when set (default: unset, range 0.0-1.0)
 - `EMBEDDING_ON_CPU` - Force embedding model to CPU (default: `false`, set `true` for tight GPU memory)
+- `LLM_ENRICHMENT` - Enable LLM theme enrichment in concept extraction (default: `true`, set `false` for NLP-only mode)
 
 ## Ports
 
@@ -122,4 +124,3 @@ The ML backend loads two models onto the GPU: the LLM (~2.6GB) and the embedding
 - 8000: ML Backend (Actix)
 - 9042: Cassandra
 - 11434: Ollama
-- 3000: Grafana

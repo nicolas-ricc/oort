@@ -76,7 +76,11 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
-    let concepts_model = Arc::new(ConceptsModel::new(llm_backend));
+    let concepts_model = Arc::new(ConceptsModel::new(
+        llm_backend,
+        Arc::clone(&embedding_backend) as Arc<dyn crate::models::inference::EmbeddingBackend>,
+        config.llm_enrichment,
+    ));
     let embedding_model = Arc::new(EmbeddingModel::new(embedding_backend));
 
     let db_nodes: Vec<&str> = db_nodes_str.split(',').collect();
