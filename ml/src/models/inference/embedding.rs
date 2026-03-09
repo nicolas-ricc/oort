@@ -1,3 +1,4 @@
+use std::time::Duration;
 use async_trait::async_trait;
 use log::info;
 use mistralrs::{EmbeddingModelBuilder, EmbeddingRequest, IsqType, Model};
@@ -53,10 +54,13 @@ impl EmbeddingBackend for MistralRsEmbedding {
             ));
         }
 
-        self.model
-            .generate_embedding(text)
-            .await
-            .map_err(|e| InferenceError::InferenceFailed(e.to_string()))
+        tokio::time::timeout(
+            Duration::from_secs(60),
+            self.model.generate_embedding(text),
+        )
+        .await
+        .map_err(|_| InferenceError::InferenceFailed("Embedding timed out after 60 seconds".into()))?
+        .map_err(|e| InferenceError::InferenceFailed(e.to_string()))
     }
 
     async fn embed_batch(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, InferenceError> {
@@ -75,10 +79,13 @@ impl EmbeddingBackend for MistralRsEmbedding {
             request = request.add_prompt(*text);
         }
 
-        self.model
-            .generate_embeddings(request)
-            .await
-            .map_err(|e| InferenceError::InferenceFailed(e.to_string()))
+        tokio::time::timeout(
+            Duration::from_secs(120),
+            self.model.generate_embeddings(request),
+        )
+        .await
+        .map_err(|_| InferenceError::InferenceFailed("Batch embedding timed out after 120 seconds".into()))?
+        .map_err(|e| InferenceError::InferenceFailed(e.to_string()))
     }
 
     async fn warmup(&self) -> Result<(), InferenceError> {
